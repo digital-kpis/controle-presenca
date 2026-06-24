@@ -241,8 +241,6 @@ function ControlePresenca() {
   const [showTipos, setShowTipos] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [bancoHoras, setBancoHoras] = useState({});       // { colabId: [{ id, data, minutos, created_at }] }
-  const [showBancoHoras, setShowBancoHoras] = useState(null); // colabId aberto no modal
 
   const showToast = useCallback((msg) => {
     setToast(msg); setTimeout(() => setToast(null), 2200);
@@ -293,15 +291,6 @@ function ControlePresenca() {
       (presRows || []).forEach(r => { map[`${r.colab_id}:${r.data}`] = r.status; });
       setPresencas(map);
 
-      // 4. Banco de horas (todos os lançamentos)
-      const { data: bhRows } = await sb.from("banco_horas").select("*").order("data", { ascending: false });
-      const bhMap = {};
-      (bhRows || []).forEach(r => {
-        if (!bhMap[r.colab_id]) bhMap[r.colab_id] = [];
-        bhMap[r.colab_id].push(r);
-      });
-      setBancoHoras(bhMap);
-
       setPronto(true);
     }
 
@@ -337,23 +326,10 @@ function ControlePresenca() {
       })
       .subscribe();
 
-    const chanBancoHoras = sb.channel("banco-horas-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "banco_horas" }, async () => {
-        const { data: bhRows } = await sb.from("banco_horas").select("*").order("data", { ascending: false });
-        const bhMap = {};
-        (bhRows || []).forEach(r => {
-          if (!bhMap[r.colab_id]) bhMap[r.colab_id] = [];
-          bhMap[r.colab_id].push(r);
-        });
-        setBancoHoras(bhMap);
-      })
-      .subscribe();
-
     return () => {
       sb.removeChannel(chanColabs);
       sb.removeChannel(chanPresencas);
       sb.removeChannel(chanTipos);
-      sb.removeChannel(chanBancoHoras);
     };
   }, []);
 
@@ -412,34 +388,6 @@ function ControlePresenca() {
     setSaving(false);
     setConfirmDelete(null);
     showToast("Colaborador removido");
-  }, [showToast]);
-
-  const saldoMinutos = useCallback((colabId) => {
-    const lancamentos = bancoHoras[colabId] || [];
-    return lancamentos.reduce((acc, l) => acc + l.minutos, 0);
-  }, [bancoHoras]);
-
-  const handleSaveBancoHoras = useCallback(async (colabId, minutos, data) => {
-    setSaving(true);
-    const novo = { id: `bh${Date.now()}`, colab_id: colabId, minutos, data };
-    await sb().from("banco_horas").insert(novo);
-    setBancoHoras(prev => {
-      const lista = [novo, ...(prev[colabId] || [])].sort((a,b) => b.data.localeCompare(a.data));
-      return { ...prev, [colabId]: lista };
-    });
-    setSaving(false);
-    showToast("Lançamento salvo");
-  }, [showToast]);
-
-  const handleDeleteBancoHoras = useCallback(async (colabId, lancId) => {
-    setSaving(true);
-    await sb().from("banco_horas").delete().eq("id", lancId);
-    setBancoHoras(prev => ({
-      ...prev,
-      [colabId]: (prev[colabId] || []).filter(l => l.id !== lancId)
-    }));
-    setSaving(false);
-    showToast("Lançamento removido");
   }, [showToast]);
 
   const handleSaveTipo = useCallback(async (tipo) => {
@@ -607,7 +555,6 @@ function ControlePresenca() {
             h("thead", null,
               h("tr", null,
                 h("th", { style: S.thName }, "Colaborador"),
-                h("th", { style: { ...S.thDay, minWidth: 64, position:"sticky", right:0, background:"#FBFAF7", zIndex:2 } }, "Saldo BH"),
                 ...weekDays.map(d => {
                   const isToday = isoDate(d) === isoDate(new Date());
                   const isSun   = d.getDay() === 0;
@@ -622,7 +569,7 @@ function ControlePresenca() {
               gruposPorTurno.map(grupo =>
                 h("tbody", { key: grupo.turno.id },
                   h("tr", null,
-                    h("td", { colSpan: 9, style: { ...S.groupHeaderCell, borderLeftColor: grupo.turno.cor } },
+                    h("td", { colSpan: 8, style: { ...S.groupHeaderCell, borderLeftColor: grupo.turno.cor } },
                       h("span", { style: { ...S.groupHeaderDot, background: grupo.turno.cor } }),
                       h("span", { style: S.groupHeaderText }, grupo.turno.label),
                       h("span", { style: S.groupHeaderHorario }, grupo.turno.horario),
@@ -632,9 +579,7 @@ function ControlePresenca() {
                   ...grupo.items.map((colab, i) => rowColaborador(colab, i, weekDays, presencas, cycleStatus,
                     () => { setEditingColab(colab); setShowCadastro(true); },
                     () => setConfirmDelete(colab),
-                    getStatusInfo,
-                    saldoMinutos(colab.id),
-                    () => setShowBancoHoras(colab.id)
+                    getStatusInfo
                   ))
                 )
               ) :
@@ -642,9 +587,7 @@ function ControlePresenca() {
                 ...colaboradoresDoTurno.map((colab, i) => rowColaborador(colab, i, weekDays, presencas, cycleStatus,
                   () => { setEditingColab(colab); setShowCadastro(true); },
                   () => setConfirmDelete(colab),
-                  getStatusInfo,
-                  saldoMinutos(colab.id),
-                  () => setShowBancoHoras(colab.id)
+                  getStatusInfo
                 ))
               )
           )
@@ -661,13 +604,6 @@ function ControlePresenca() {
       tipos: tiposStatus, onClose: () => setShowTipos(false),
       onSave: handleSaveTipo, onDelete: handleDeleteTipo
     }),
-    showBancoHoras && h(BancoHorasModal, {
-      colab: colaboradores.find(c => c.id === showBancoHoras),
-      lancamentos: bancoHoras[showBancoHoras] || [],
-      onClose: () => setShowBancoHoras(null),
-      onSave: (minutos, data) => handleSaveBancoHoras(showBancoHoras, minutos, data),
-      onDelete: (lancId) => handleDeleteBancoHoras(showBancoHoras, lancId)
-    }),
     confirmDelete && h("div", { style: S.modalOverlay, onClick: () => setConfirmDelete(null) },
       h("div", { style: S.confirmCard, onClick: e => e.stopPropagation() },
         h("p", { style: S.confirmTitle }, "Remover colaborador?"),
@@ -683,18 +619,8 @@ function ControlePresenca() {
   );
 }
 
-// ====== HELPERS BANCO DE HORAS ======
-function formatMinutos(total) {
-  const abs = Math.abs(total);
-  const h = Math.floor(abs / 60);
-  const m = abs % 60;
-  const sinal = total < 0 ? "-" : total > 0 ? "+" : "";
-  return `${sinal}${h}h${String(m).padStart(2,"0")}`;
-}
-
 // ====== LINHA DA TABELA ======
-function rowColaborador(colab, index, weekDays, presencas, onCycle, onEdit, onDelete, getStatusInfo, saldo, onBancoHoras) {
-  const negativo = saldo < 0;
+function rowColaborador(colab, index, weekDays, presencas, onCycle, onEdit, onDelete, getStatusInfo) {
   return h("tr", { key: colab.id, style: index%2===1 ? { background:"#FBFAF7" } : undefined },
     h("td", { style: S.tdName },
       h("div", { style: S.nameCell },
@@ -707,20 +633,6 @@ function rowColaborador(colab, index, weekDays, presencas, onCycle, onEdit, onDe
           h("button", { style: { ...S.iconBtn, color:"#C1503E" }, title:"Remover", onClick: onDelete }, h(Trash2, { size:13 }))
         )
       )
-    ),
-    h("td", { style: { ...S.tdCell, position:"sticky", right:0, background: index%2===1?"#FBFAF7":"#FFFFFF", zIndex:1 } },
-      h("button", {
-        onClick: onBancoHoras,
-        title: "Banco de horas",
-        style: {
-          padding:"3px 7px", borderRadius:6, border:"1.5px solid",
-          fontSize:11, fontWeight:800, display:"inline-flex", alignItems:"center", justifyContent:"center",
-          background: negativo ? "#F7E8E5" : saldo===0 ? "#F4F1EA" : "#E8F0EA",
-          borderColor: negativo ? "#C1503E" : saldo===0 ? "#D8D2C5" : "#5B8A72",
-          color: negativo ? "#C1503E" : saldo===0 ? "#8A8478" : "#5B8A72",
-          minWidth:52
-        }
-      }, formatMinutos(saldo))
     ),
     ...weekDays.map(d => {
       const dateIso = isoDate(d);
@@ -735,115 +647,6 @@ function rowColaborador(colab, index, weekDays, presencas, onCycle, onEdit, onDe
         }, s.short)
       );
     })
-  );
-}
-
-// ====== MODAL BANCO DE HORAS ======
-function BancoHorasModal({ colab, lancamentos, onClose, onSave, onDelete }) {
-  const [horas,  setHoras]  = useState("");
-  const [mins,   setMins]   = useState("");
-  const [tipo,   setTipo]   = useState("credito"); // "credito" | "debito"
-  const [data,   setData]   = useState(isoDate(new Date()));
-  const [erro,   setErro]   = useState("");
-  const [confirmDel, setConfirmDel] = useState(null);
-
-  const saldoTotal = lancamentos.reduce((acc, l) => acc + l.minutos, 0);
-
-  const submit = () => {
-    const h = parseInt(horas || "0", 10);
-    const m = parseInt(mins  || "0", 10);
-    if (isNaN(h) || isNaN(m)) { setErro("Informe horas e minutos válidos."); return; }
-    if (h === 0 && m === 0)   { setErro("O valor não pode ser zero."); return; }
-    if (m < 0 || m > 59)      { setErro("Minutos devem ser entre 0 e 59."); return; }
-    const minutos = (h * 60 + m) * (tipo === "debito" ? -1 : 1);
-    onSave(minutos, data);
-    setHoras(""); setMins(""); setErro("");
-  };
-
-  return h("div", { style: S.modalOverlay, onClick: onClose },
-    h("div", { style: S.modalCard, onClick: e => e.stopPropagation() },
-      h("div", { style: S.modalHeader },
-        h("h2", { style: S.modalTitle }, "Banco de Horas"),
-        h("button", { style: S.modalClose, onClick: onClose }, h(X, { size: 18 }))
-      ),
-      // Nome e saldo
-      h("div", { style: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, background:"#F4F1EA", borderRadius:10, padding:"10px 14px" } },
-        h("div", null,
-          h("div", { style: { fontSize:13, fontWeight:700, color:"#2B2620" } }, colab?.nome),
-          h("div", { style: { fontSize:11.5, color:"#9C9586" } }, `${colab?.matricula} · ${colab?.funcao}`)
-        ),
-        h("div", { style: { textAlign:"right" } },
-          h("div", { style: { fontSize:11, color:"#9C9586", marginBottom:2 } }, "Saldo acumulado"),
-          h("div", { style: { fontSize:20, fontWeight:800, color: saldoTotal < 0 ? "#C1503E" : saldoTotal > 0 ? "#5B8A72" : "#8A8478" } },
-            formatMinutos(saldoTotal)
-          )
-        )
-      ),
-
-      // Formulário de novo lançamento
-      h("div", { style: { background:"#FFFFFF", border:"1px solid #EFEBE2", borderRadius:10, padding:"12px 14px", marginBottom:14 } },
-        h("div", { style: { fontSize:12, fontWeight:700, color:"#6B6458", marginBottom:10 } }, "Novo lançamento"),
-        // Tipo (crédito / débito)
-        h("div", { style: { display:"flex", gap:6, marginBottom:10 } },
-          h("button", { onClick: () => setTipo("credito"), style: { ...S.chip, flex:1, justifyContent:"center", ...(tipo==="credito" ? { background:"#E8F0EA", borderColor:"#5B8A72", color:"#5B8A72" } : {}) } }, "+ Crédito"),
-          h("button", { onClick: () => setTipo("debito"),  style: { ...S.chip, flex:1, justifyContent:"center", ...(tipo==="debito"  ? { background:"#F7E8E5", borderColor:"#C1503E", color:"#C1503E" } : {}) } }, "− Débito")
-        ),
-        // Horas e minutos
-        h("div", { style: { display:"flex", gap:8, marginBottom:10 } },
-          h("div", { style: { flex:1 } },
-            h("label", { style: S.label }, "Horas"),
-            h("input", { style: S.input, type:"number", min:0, placeholder:"0", value:horas, onChange: e => setHoras(e.target.value), inputMode:"numeric" })
-          ),
-          h("div", { style: { flex:1 } },
-            h("label", { style: S.label }, "Minutos"),
-            h("input", { style: S.input, type:"number", min:0, max:59, placeholder:"00", value:mins, onChange: e => setMins(e.target.value), inputMode:"numeric" })
-          ),
-          h("div", { style: { flex:1 } },
-            h("label", { style: S.label }, "Data"),
-            h("input", { style: S.input, type:"date", value:data, onChange: e => setData(e.target.value) })
-          )
-        ),
-        erro && h("p", { style: { ...S.errorText, marginBottom:8 } }, erro),
-        h("button", { style: { ...S.btnPrimary, width:"100%" }, onClick: submit },
-          h(Check, { size:15, strokeWidth:2.5 }), " Salvar lançamento"
-        )
-      ),
-
-      // Histórico
-      h("div", { style: { fontSize:12, fontWeight:700, color:"#6B6458", marginBottom:8 } }, "Histórico"),
-      lancamentos.length === 0 ?
-        h("p", { style: { fontSize:13, color:"#B3AC9D", textAlign:"center", padding:"16px 0" } }, "Nenhum lançamento ainda.") :
-        h("div", { style: { display:"flex", flexDirection:"column", gap:6, maxHeight:240, overflowY:"auto" } },
-          ...lancamentos.map(l => {
-            const pos = l.minutos >= 0;
-            const abs = Math.abs(l.minutos);
-            const lh  = Math.floor(abs/60);
-            const lm  = abs % 60;
-            return h("div", { key: l.id, style: { display:"flex", alignItems:"center", gap:10, background:"#FFFFFF", border:"1px solid #EFEBE2", borderRadius:9, padding:"8px 10px" } },
-              h("span", { style: { fontSize:13, fontWeight:800, minWidth:56, color: pos?"#5B8A72":"#C1503E" } },
-                `${pos?"+":"-"}${lh}h${String(lm).padStart(2,"0")}`
-              ),
-              h("span", { style: { fontSize:12, color:"#9C9586", flex:1 } }, l.data),
-              h("button", { onClick: () => setConfirmDel(l), style: { ...S.iconBtn, color:"#C1503E", flexShrink:0 } }, h(Trash2, { size:13 }))
-            );
-          })
-        ),
-
-      h("div", { style: { ...S.modalActions, marginTop:16 } },
-        h("button", { style: { ...S.btnPrimary, flex:1 }, onClick: onClose }, "Fechar")
-      )
-    ),
-    // Confirmação de exclusão
-    confirmDel && h("div", { style: S.modalOverlay, onClick: e => e.stopPropagation() },
-      h("div", { style: S.confirmCard, onClick: e => e.stopPropagation() },
-        h("p", { style: S.confirmTitle }, "Remover lançamento?"),
-        h("p", { style: S.confirmText }, "Este lançamento será excluído e o saldo atualizado."),
-        h("div", { style: S.confirmActions },
-          h("button", { style: S.btnGhost, onClick: () => setConfirmDel(null) }, "Cancelar"),
-          h("button", { style: S.btnDanger, onClick: () => { onDelete(confirmDel.id); setConfirmDel(null); } }, "Remover")
-        )
-      )
-    )
   );
 }
 
