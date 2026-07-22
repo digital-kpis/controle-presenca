@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<title>Controle de Presença</title>
+<meta name="description" content="Controle de presença de colaboradores por turno"/>
+<meta name="theme-color" content="#2B2620"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Presença"/>
+<link rel="manifest" href="./manifest.json"/>
+<link rel="icon" href="./icons/icon-192.png"/>
+<link rel="apple-touch-icon" href="./icons/icon-512.png"/>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#FAF8F4}
+  #boot-loader{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#FAF8F4;font-family:-apple-system,sans-serif}
+  .dot{width:10px;height:10px;border-radius:50%;background:#D97757;animation:p 1.2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</head>
+<body>
+
+<div id="root">
+  <div id="boot-loader">
+    <div class="dot"></div>
+    <p style="font-size:13px;color:#9C9586;margin-top:14px">Carregando…</p>
+  </div>
+</div>
+
+<!-- Credenciais Supabase -->
+<script>
+  window.SUPABASE_URL = "https://SEU_PROJETO.supabase.co";
+  window.SUPABASE_KEY = "SUA_CHAVE_ANON";
+</script>
+
+<!-- Dependências -->
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+
+<!-- App — JavaScript puro, SEM Babel -->
+<script src="./app.jsx"></script>
+
+<!-- Service Worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+</script>
+
+</body>
+</html>
