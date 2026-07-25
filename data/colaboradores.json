@@ -1,0 +1,212 @@
+[
+  {
+    "id": "c1",
+    "matricula": "7153570",
+    "nome": "Anna Caroline",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c2",
+    "matricula": "5624576",
+    "nome": "Cláudia Regina",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c3",
+    "matricula": "6427510",
+    "nome": "Danillo de Souza",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c4",
+    "matricula": "8005225",
+    "nome": "Francicleide dos Santos",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c5",
+    "matricula": "5885264",
+    "nome": "Joselito Dias Sobreira",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c6",
+    "matricula": "5646375",
+    "nome": "Lizandra Araujo",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c7",
+    "matricula": "6528910",
+    "nome": "Matheus Carlos",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c8",
+    "matricula": "7026595",
+    "nome": "Maria Eduarda",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c9",
+    "matricula": "6899153",
+    "nome": "Nataniel Sousa",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c10",
+    "matricula": "6755461",
+    "nome": "Simone do Carmo",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c11",
+    "matricula": "7026013",
+    "nome": "Victoria Aquino",
+    "funcao": "Op. Loja",
+    "turno": "manha"
+  },
+  {
+    "id": "c12",
+    "matricula": "6465951",
+    "nome": "Alfredo Nascimento",
+    "funcao": "Op. Loja",
+    "turno": "intermediario"
+  },
+  {
+    "id": "c13",
+    "matricula": "5361060",
+    "nome": "Gabriel Martins",
+    "funcao": "Op. Loja",
+    "turno": "intermediario"
+  },
+  {
+    "id": "c14",
+    "matricula": "4275195",
+    "nome": "Gleyce Kelly",
+    "funcao": "Op. Loja",
+    "turno": "intermediario"
+  },
+  {
+    "id": "c15",
+    "matricula": "5568978",
+    "nome": "Felipe Mota",
+    "funcao": "Pleno",
+    "turno": "tarde"
+  },
+  {
+    "id": "c16",
+    "matricula": "7237790",
+    "nome": "Flavio Ferreira",
+    "funcao": "Pleno PREV.",
+    "turno": "tarde"
+  },
+  {
+    "id": "c17",
+    "matricula": "6926177",
+    "nome": "Alohan da Costa",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c18",
+    "matricula": "7237316",
+    "nome": "Daniele Teixeira",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c19",
+    "matricula": "7216165",
+    "nome": "Deivison Vieira",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c20",
+    "matricula": "7237308",
+    "nome": "Fernanda Pereira",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c21",
+    "matricula": "7029578",
+    "nome": "Jonas Felipe",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c22",
+    "matricula": "7160542",
+    "nome": "Kamili Conceição",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c23",
+    "matricula": "7115261",
+    "nome": "Leonard Gerard",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c24",
+    "matricula": "7029322",
+    "nome": "Marcelo da Silva",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c25",
+    "matricula": "7014252",
+    "nome": "Suelen da Silva",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c26",
+    "matricula": "7122659",
+    "nome": "Talia Mesquita",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c27",
+    "matricula": "7164289",
+    "nome": "Taissa Ferreira",
+    "funcao": "Op. Loja",
+    "turno": "tarde"
+  },
+  {
+    "id": "c28",
+    "matricula": "7231784",
+    "nome": "Andrey da Costa",
+    "funcao": "Op. Loja",
+    "turno": "noite"
+  },
+  {
+    "id": "c29",
+    "matricula": "6259731",
+    "nome": "Guilherme Veras",
+    "funcao": "Op. Loja",
+    "turno": "noite"
+  },
+  {
+    "id": "c30",
+    "matricula": "6739733",
+    "nome": "Lohan Rodrigues",
+    "funcao": "Op. Loja",
+    "turno": "noite"
+  }
+]
