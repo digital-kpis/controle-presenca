@@ -9,9 +9,10 @@
   {
     "id": "falta",
     "label": "Falta",
-    "short": "F",
-    "color": "#C0392B",
-    "bg": "#FADBD8"
+    "short": "FX",
+    "color": "#FF1744",
+    "bg": "#FF174422",
+    "fonte": "system"
   },
   {
     "id": "folga",
@@ -22,7 +23,7 @@
   },
   {
     "id": "ferias",
-    "label": "Férias",
+    "label": "FÃ©rias",
     "short": "FF",
     "color": "#D68910",
     "bg": "#FDEBD0"
