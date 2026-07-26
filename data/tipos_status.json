@@ -23,10 +23,11 @@
   },
   {
     "id": "ferias",
-    "label": "FÃ©rias",
+    "label": "Folga Feriado",
     "short": "FF",
     "color": "#D68910",
-    "bg": "#FDEBD0"
+    "bg": "#D6891022",
+    "fonte": "system"
   },
   {
     "id": "atestado",
