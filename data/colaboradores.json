@@ -9,7 +9,7 @@
   {
     "id": "c2",
     "matricula": "5624576",
-    "nome": "Cláudia Regina",
+    "nome": "ClÃ¡udia Regina",
     "funcao": "Op. Loja",
     "turno": "manha"
   },
@@ -105,13 +105,6 @@
     "turno": "tarde"
   },
   {
-    "id": "c16",
-    "matricula": "7237790",
-    "nome": "Flavio Ferreira",
-    "funcao": "Pleno PREV.",
-    "turno": "tarde"
-  },
-  {
     "id": "c17",
     "matricula": "6926177",
     "nome": "Alohan da Costa",
@@ -149,7 +142,7 @@
   {
     "id": "c22",
     "matricula": "7160542",
-    "nome": "Kamili Conceição",
+    "nome": "Kamili ConceiÃ§Ã£o",
     "funcao": "Op. Loja",
     "turno": "tarde"
   },
