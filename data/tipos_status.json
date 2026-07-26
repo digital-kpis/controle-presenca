@@ -35,5 +35,13 @@
     "short": "AT",
     "color": "#6C3483",
     "bg": "#E8DAEF"
+  },
+  {
+    "id": "t1785060103053",
+    "label": "Banco hora",
+    "short": "BH",
+    "color": "#3498DB",
+    "bg": "#3498DB22",
+    "fonte": "system"
   }
 ]
