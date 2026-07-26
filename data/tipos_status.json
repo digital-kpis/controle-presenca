@@ -44,5 +44,13 @@
     "color": "#3498DB",
     "bg": "#3498DB22",
     "fonte": "system"
+  },
+  {
+    "id": "t1785060215494",
+    "label": "Férias",
+    "short": "DD",
+    "color": "#27AE60",
+    "bg": "#27AE6022",
+    "fonte": "system"
   }
 ]
