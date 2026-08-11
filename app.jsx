@@ -101,8 +101,12 @@ const GH = {
   async read(path){
     const url=`https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}?ref=${this.branch}`;
     const r=await fetch(url,{headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json"}});
-    if(r.status===404) return { data:null, sha:null };
-    if(!r.ok) throw new Error(`GitHub read error ${r.status}`);
+    if(r.status===401) throw new Error("Token inválido ou expirado. Reconfigure o acesso ao GitHub.");
+    if(r.status===403) throw new Error("Sem permissão. Verifique se o token tem escopo 'repo'.");
+    if(r.status===404){
+      return { data:null, sha:null }; // arquivo ainda não existe — ok, será criado no primeiro save
+    }
+    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.message||`GitHub erro ${r.status}`); }
     const j=await r.json();
     return { data: JSON.parse(atob(j.content.replace(/\n/g,""))), sha: j.sha };
   },
@@ -292,6 +296,12 @@ function ControlePresenca({ onDesconectar }){
 
       // Busca dados frescos do GitHub
       try{
+        // Testa o repositório primeiro
+        const testUrl=`https://api.github.com/repos/${GH.owner}/${GH.repo}`;
+        const testR=await fetch(testUrl,{headers:{"Authorization":`token ${GH.token}`}});
+        if(testR.status===401||testR.status===403) throw new Error("Token inválido ou expirado. Clique em 'Reconfigurar' para atualizar.");
+        if(testR.status===404) throw new Error(`Repositório '${GH.owner}/${GH.repo}' não encontrado. Clique em 'Reconfigurar' para corrigir.`);
+
         const [rc,rt,rp,rb] = await Promise.all([
           GH.read("data/colaboradores.json"),
           GH.read("data/tipos_status.json"),
@@ -459,21 +469,23 @@ function ControlePresenca({ onDesconectar }){
     showToast("Lançamento removido");
   },[bancoHoras,saveGitHub,showToast]);
 
-  // Sync manual — puxa dados frescos do GitHub
+  // Sync manual — puxa dados frescos do GitHub (404 = arquivo ainda não existe, tudo bem)
   const sincronizar = useCallback(async()=>{
     setSalvando(true);
     try{
+      // Lê cada arquivo individualmente para que 404 em um não derrube os outros
+      const ler = async(path) => { try{ return await GH.read(path); }catch(e){ return {data:null,sha:null}; } };
       const [rc,rt,rp,rb] = await Promise.all([
-        GH.read("data/colaboradores.json"),
-        GH.read("data/tipos_status.json"),
-        GH.read("data/presencas.json"),
-        GH.read("data/banco_horas.json"),
+        ler("data/colaboradores.json"),
+        ler("data/tipos_status.json"),
+        ler("data/presencas.json"),
+        ler("data/banco_horas.json"),
       ]);
       if(rc.data){ shas.current.colaboradores=rc.sha; setColaboradores(rc.data); LC.set("colaboradores",rc.data); }
       if(rt.data){ shas.current.tiposStatus=rt.sha; setTiposStatus(rt.data); LC.set("tiposStatus",rt.data); }
-      if(rp.data){ shas.current.presencas=rp.sha; setPresencas(rp.data); LC.set("presencas",rp.data); }
+      if(rp.data){ shas.current.presencas=rp.sha; presencasRef.current=rp.data; setPresencas(rp.data); LC.set("presencas",rp.data); }
       if(rb.data){ shas.current.bancoHoras=rb.sha; setBancoHoras(rb.data); LC.set("bancoHoras",rb.data); }
-      showToast("Sincronizado!");
+      showToast("Sincronizado ✓");
     }catch(e){
       showToast("Erro ao sincronizar: "+e.message, true);
     }
@@ -525,6 +537,10 @@ function ControlePresenca({ onDesconectar }){
           salvando&&h("span",{style:S.salvandoBadge},"Salvando…"),
           h("button",{style:S.iconBtn2,onClick:sincronizar,title:"Sincronizar com GitHub"},
             h(RefreshCw,{size:16,color:"#5C5648",strokeWidth:2.2})
+          ),
+          h("button",{style:{...S.iconBtn2,fontSize:10,fontWeight:700,color:"#9C9586",padding:"0 8px",width:"auto"},
+            onClick:onDesconectar,title:"Reconfigurar GitHub"},
+            "⚙ Config"
           ),
           h("button",{style:S.addBtn,onClick:()=>{setEditingColab(null);setShowCadastro(true);}},
             h(UserPlus,{size:15,strokeWidth:2.2}),h("span",null,"Cadastrar")
