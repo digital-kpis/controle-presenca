@@ -18,6 +18,7 @@ const CalendarDays = p => h(Icon,p, h("rect",{x:3,y:4,width:18,height:18,rx:2}),
 const Settings     = p => h(Icon,p, h("circle",{cx:12,cy:12,r:3}), h("path",{d:"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"}));
 const Pencil       = p => h(Icon,p, h("path",{d:"M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"}));
 const TrendingUp   = p => h(Icon,p, h("polyline",{points:"22 7 13.5 15.5 8.5 10.5 2 17"}), h("polyline",{points:"16 7 22 7 22 13"}));
+const UtensilsCrossed = p => h(Icon,p, h("path",{d:"M3 3l18 18"}), h("path",{d:"M14.28 14.28A4 4 0 1 0 9.73 9.72"}), h("path",{d:"M21 15a3 3 0 1 1-6 0"}), h("path",{d:"M3 7v2a4 4 0 0 0 4 4h0"}), h("path",{d:"M7 3v4"}));
 const RefreshCw    = p => h(Icon,p, h("path",{d:"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"}), h("path",{d:"M21 3v5h-5"}), h("path",{d:"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"}), h("path",{d:"M8 16H3v5"}));
 const Save         = p => h(Icon,p, h("path",{d:"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"}), h("polyline",{points:"17 21 17 13 7 13 7 21"}), h("polyline",{points:"7 3 7 8 15 8"}));
 
@@ -276,6 +277,8 @@ function ControlePresenca({ onDesconectar }){
   const [showLanc,     setShowLanc]     = useState(false);
   const [editingLanc,  setEditingLanc]  = useState(null);
   const [bhFiltro,     setBhFiltro]     = useState(null);
+  const [almocos,      setAlmocos]      = useState({});  // { "colabId:isoDate": {saida, retorno} }
+  const [almocoData,   setAlmocoData]   = useState(()=>isoDate(new Date()));
   const [toast,        setToast]        = useState(null);
 
   // SHAs dos arquivos no GitHub (necessário para atualizar)
@@ -312,12 +315,14 @@ function ControlePresenca({ onDesconectar }){
         if(testR.status===401||testR.status===403) throw new Error("Token inválido ou expirado. Clique em 'Reconfigurar' para atualizar.");
         if(testR.status===404) throw new Error(`Repositório '${GH.owner}/${GH.repo}' não encontrado. Clique em 'Reconfigurar' para corrigir.`);
 
-        const [rc,rt,rp,rb] = await Promise.all([
+        const results = await Promise.all([
           GH.read("data/colaboradores.json"),
           GH.read("data/tipos_status.json"),
           GH.read("data/presencas.json"),
           GH.read("data/banco_horas.json"),
+          GH.read("data/almocos.json"),
         ]);
+        const [rc,rt,rp,rb] = results;
 
         if(rc.data){ shas.current.colaboradores=rc.sha; setColaboradores(rc.data); LC.set("colaboradores",rc.data); }
         else {
@@ -341,6 +346,10 @@ function ControlePresenca({ onDesconectar }){
 
         if(rb.data){ shas.current.bancoHoras=rb.sha; setBancoHoras(rb.data); LC.set("bancoHoras",rb.data); }
         else { const sha=await GH.write("data/banco_horas.json",[],null); shas.current.bancoHoras=sha; }
+
+        const ra=results[4];
+        if(ra&&ra.data){ shas.current.almocos=ra.sha; setAlmocos(ra.data); LC.set("almocos",ra.data); }
+        else { const sha=await GH.write("data/almocos.json",{},null); shas.current.almocos=sha; }
 
       }catch(e){
         showToast("Erro ao carregar do GitHub: "+e.message, true);
@@ -479,6 +488,16 @@ function ControlePresenca({ onDesconectar }){
     showToast("Lançamento removido");
   },[bancoHoras,saveGitHub,showToast]);
 
+  // ---- ALMOÇO ----
+  const handleSaveAlmoco = useCallback(async(colabId, data, saida, retorno)=>{
+    const key = `${colabId}:${data}`;
+    const next = {...almocos};
+    if(!saida && !retorno) delete next[key];
+    else next[key] = {saida, retorno};
+    setAlmocos(next);
+    await saveGitHub("data/almocos.json", next, "almocos");
+  },[almocos, saveGitHub]);
+
   // Sync manual — puxa dados frescos do GitHub (404 = arquivo ainda não existe, tudo bem)
   const sincronizar = useCallback(async()=>{
     setSalvando(true);
@@ -565,6 +584,9 @@ function ControlePresenca({ onDesconectar }){
         ),
         h("button",{style:{...S.navTab,...(tela==="bancohoras"?S.navTabAtivo:{})},onClick:()=>setTela("bancohoras")},
           h(TrendingUp,{size:14,color:tela==="bancohoras"?"#2B2620":"#9C9586",strokeWidth:2.2}),h("span",null,"Banco de Horas")
+        ),
+        h("button",{style:{...S.navTab,...(tela==="almoco"?S.navTabAtivo:{})},onClick:()=>setTela("almoco")},
+          h(UtensilsCrossed,{size:14,color:tela==="almoco"?"#2B2620":"#9C9586",strokeWidth:2.2}),h("span",null,"Almoço")
         )
       ),
 
@@ -661,6 +683,13 @@ function ControlePresenca({ onDesconectar }){
       onNovo:()=>{setEditingLanc(null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
+    }),
+
+    // TELA ALMOÇO
+    tela==="almoco"&&h(TelaAlmoco,{
+      colaboradores, presencas, almocos, almocoData,
+      setAlmocoData, onSave:handleSaveAlmoco,
+      tiposStatus,
     }),
 
     // MODAIS
@@ -1014,6 +1043,182 @@ function TipoForm({initial,onClose,onSave}){
         h("button",{style:S.btnPrimary,onClick:submit},h(Check,{size:15,strokeWidth:2.5}),isEdit?"Salvar":"Cadastrar")
       )
     )
+  );
+}
+
+// ====== TELA ALMOÇO ======
+function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoData, onSave, tiposStatus }) {
+  // Colaboradores com presença marcada na data selecionada
+  const presentes = useMemo(()=>{
+    const statusPresente = tiposStatus.find(t=>t.id==="presente");
+    return colaboradores
+      .filter(c => {
+        const st = presencas[`${c.id}:${almocoData}`];
+        // Mostra quem tem qualquer status marcado exceto folga/falta/vazio
+        return st && st !== "vazio" && st !== "falta" && st !== "folga";
+      })
+      .sort((a,b) => {
+        // Ordena por turno depois por nome
+        const ordem = ["manha","intermediario","tarde","noite"];
+        const ta = ordem.indexOf(a.turno), tb = ordem.indexOf(b.turno);
+        return ta !== tb ? ta - tb : a.nome.localeCompare(b.nome,"pt-BR");
+      });
+  }, [colaboradores, presencas, almocoData, tiposStatus]);
+
+  const [editando, setEditando] = useState(null); // colabId sendo editado
+  const [saida, setSaida]     = useState("");
+  const [retorno, setRetorno] = useState("");
+
+  const abrirEdicao = (colab) => {
+    const key = `${colab.id}:${almocoData}`;
+    const atual = almocos[key] || {};
+    setSaida(atual.saida || "");
+    setRetorno(atual.retorno || "");
+    setEditando(colab.id);
+  };
+
+  const salvar = async (colabId) => {
+    await onSave(colabId, almocoData, saida, retorno);
+    setEditando(null);
+  };
+
+  const duracao = (saida, retorno) => {
+    if(!saida || !retorno) return null;
+    const [sh,sm] = saida.split(":").map(Number);
+    const [rh,rm] = retorno.split(":").map(Number);
+    const diff = (rh*60+rm) - (sh*60+sm);
+    if(diff<=0) return null;
+    return `${Math.floor(diff/60)}h${pad2(diff%60)}`;
+  };
+
+  const turnoAtual = colaboradores.length > 0 ? null : null;
+  let ultimoTurno = null;
+
+  return h("div", {style:{padding:"12px 16px",paddingBottom:60}},
+
+    // Seletor de data
+    h("div", {style:{background:"#FFF",borderRadius:12,border:"1px solid #EFEBE2",padding:"12px 14px",marginBottom:12}},
+      h("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}},
+        h("div", null,
+          h("p", {style:{fontSize:12,fontWeight:700,color:"#6B6458",margin:"0 0 4px"}}, "Data de referência"),
+          h("input", {
+            type:"date", value:almocoData,
+            onChange:e=>setAlmocoData(e.target.value),
+            style:{...S.input, width:"auto", padding:"8px 10px", fontSize:14}
+          })
+        ),
+        h("div", {style:{textAlign:"right"}},
+          h("p", {style:{fontSize:12,fontWeight:700,color:"#6B6458",margin:"0 0 2px"}}, "Colaboradores presentes"),
+          h("p", {style:{fontSize:22,fontWeight:900,color:"#2B2620",margin:0}}, presentes.length)
+        )
+      )
+    ),
+
+    presentes.length === 0 ?
+      h("div", {style:S.emptyState},
+        h(UtensilsCrossed, {size:28, color:"#BDC3C7"}),
+        h("p", {style:S.emptyTitle}, "Nenhum colaborador com presença nesta data"),
+        h("p", {style:{fontSize:12.5,color:"#9C9586",margin:0}}, "Marque a presença na aba Escala primeiro.")
+      ) :
+
+      h("div", {style:{display:"flex",flexDirection:"column",gap:8}},
+        presentes.map(colab => {
+          const key = `${colab.id}:${almocoData}`;
+          const reg = almocos[key];
+          const dur = reg ? duracao(reg.saida, reg.retorno) : null;
+          const turnoInfo = TURNOS.find(t=>t.id===colab.turno);
+          const mostrarHeader = colab.turno !== ultimoTurno;
+          ultimoTurno = colab.turno;
+
+          return h("div", {key:colab.id},
+            // Cabeçalho de turno
+            mostrarHeader && h("div", {style:{
+              display:"flex",alignItems:"center",gap:6,
+              padding:"6px 0 4px",marginTop:mostrarHeader&&ultimoTurno!==colab.turno?8:0
+            }},
+              h("span", {style:{width:8,height:8,borderRadius:"50%",background:turnoInfo?.cor||"#ccc",flexShrink:0,display:"inline-block"}}),
+              h("span", {style:{fontSize:11,fontWeight:800,color:"#6B6458",textTransform:"uppercase",letterSpacing:"0.05em"}},
+                turnoInfo?.label||colab.turno, " · ", turnoInfo?.horario||""
+              )
+            ),
+
+            // Card do colaborador
+            h("div", {style:{
+              background:"#FFF",borderRadius:12,border:"1px solid #EFEBE2",
+              overflow:"hidden",
+            }},
+              // Linha principal
+              h("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",gap:8}},
+                h("div", null,
+                  h("div", {style:{fontSize:13,fontWeight:700,color:"#2B2620"}}, colab.nome),
+                  h("div", {style:{fontSize:11,color:"#9C9586",marginTop:1}}, colab.matricula+" · "+colab.funcao)
+                ),
+                h("div", {style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
+                  reg ?
+                    h("div", {style:{textAlign:"right"}},
+                      h("div", {style:{fontSize:12.5,fontWeight:700,color:"#2B2620"}},
+                        reg.saida||"--:--", " → ", reg.retorno||"--:--"
+                      ),
+                      dur && h("div", {style:{fontSize:11,color:"#9C9586"}}, dur+" de almoço")
+                    ) :
+                    h("span", {style:{fontSize:11.5,color:"#BDC3C7",fontStyle:"italic"}}, "Não registrado"),
+                  h("button", {
+                    style:{
+                      background: editando===colab.id ? "#2B2620" : "#F4F1EA",
+                      color: editando===colab.id ? "#FAF8F4" : "#5C5648",
+                      border:"none",borderRadius:8,padding:"7px 12px",
+                      fontSize:12,fontWeight:700,flexShrink:0
+                    },
+                    onClick:()=> editando===colab.id ? setEditando(null) : abrirEdicao(colab)
+                  }, editando===colab.id ? "Cancelar" : reg ? "Editar" : "Registrar")
+                )
+              ),
+
+              // Formulário inline
+              editando===colab.id && h("div", {style:{
+                borderTop:"1px solid #F4F1EA",
+                padding:"12px 14px",
+                background:"#FAF8F4",
+                display:"flex",flexDirection:"column",gap:10
+              }},
+                h("div", {style:{display:"flex",gap:12}},
+                  h("div", {style:{flex:1}},
+                    h("label", {style:{...S.label}}, "Saída para almoço"),
+                    h("input", {
+                      type:"time", value:saida,
+                      onChange:e=>setSaida(e.target.value),
+                      style:{...S.input,fontSize:16,fontWeight:700,textAlign:"center"}
+                    })
+                  ),
+                  h("div", {style:{flex:1}},
+                    h("label", {style:{...S.label}}, "Retorno do almoço"),
+                    h("input", {
+                      type:"time", value:retorno,
+                      onChange:e=>setRetorno(e.target.value),
+                      style:{...S.input,fontSize:16,fontWeight:700,textAlign:"center"}
+                    })
+                  )
+                ),
+                saida&&retorno&&duracao(saida,retorno)&&h("p",{style:{
+                  margin:0,fontSize:12.5,fontWeight:700,
+                  color:"#2B2620",background:"#EFEBE2",
+                  borderRadius:8,padding:"6px 10px",textAlign:"center"
+                }}, `Duração: ${duracao(saida,retorno)}`),
+                h("div", {style:{display:"flex",gap:8}},
+                  reg && h("button", {
+                    style:{...S.btnGhost,flex:1,color:"#C0392B",borderColor:"#FADBD8"},
+                    onClick:()=>{ onSave(colab.id,almocoData,"",""); setEditando(null); }
+                  }, "Limpar"),
+                  h("button", {
+                    style:{...S.btnPrimary,flex:2},
+                    onClick:()=>salvar(colab.id)
+                  }, h(Check,{size:14,strokeWidth:2.5}), "Salvar horário")
+                )
+              )
+            )
+          );
+        })
+      )
   );
 }
 
