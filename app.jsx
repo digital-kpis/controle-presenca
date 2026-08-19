@@ -98,30 +98,40 @@ const GH = {
   get branch(){ return localStorage.getItem("gh_branch")||"main"; },
   configured(){ return !!(this.owner && this.repo && this.token); },
 
+  async _fetch(url, opts, tentativas=3){
+    for(let i=0;i<tentativas;i++){
+      try{ return await fetch(url,opts); }
+      catch(e){
+        if(i===tentativas-1) throw new Error("Sem conexão com o GitHub. Verifique sua internet.");
+        await new Promise(r=>setTimeout(r,1200*(i+1)));
+      }
+    }
+  },
+
   async read(path){
     const url=`https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}?ref=${this.branch}`;
-    const r=await fetch(url,{headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json"}});
-    if(r.status===401) throw new Error("Token inválido ou expirado. Reconfigure o acesso ao GitHub.");
-    if(r.status===403) throw new Error("Sem permissão. Verifique se o token tem escopo 'repo'.");
-    if(r.status===404){
-      return { data:null, sha:null }; // arquivo ainda não existe — ok, será criado no primeiro save
-    }
+    const r=await this._fetch(url,{headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json"}});
+    if(r.status===401) throw new Error("Token inválido ou expirado. Reconfigure.");
+    if(r.status===403) throw new Error("Sem permissão. Token precisa do escopo 'repo'.");
+    if(r.status===404) return { data:null, sha:null };
     if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.message||`GitHub erro ${r.status}`); }
     const j=await r.json();
-    return { data: JSON.parse(atob(j.content.replace(/\n/g,""))), sha: j.sha };
+    const decoded = decodeURIComponent(atob(j.content.replace(/\n/g,"")).split("").map(c=>"%"+c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
+    return { data: JSON.parse(decoded), sha: j.sha };
   },
 
   async write(path, data, sha){
     const url=`https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}`;
-    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(data,null,2))));
+    const json = JSON.stringify(data,null,2);
+    const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,(_,p1)=>String.fromCharCode(parseInt(p1,16))));
     const body={ message:`update ${path}`, content:encoded, branch:this.branch };
     if(sha) body.sha=sha;
-    const r=await fetch(url,{method:"PUT",headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json","Content-Type":"application/json"},body:JSON.stringify(body)});
+    const hdrs={"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json","Content-Type":"application/json"};
+    const r=await this._fetch(url,{method:"PUT",headers:hdrs,body:JSON.stringify(body)});
     if(r.status===409){
-      // SHA desatualizado — busca o SHA atual e tenta de novo automaticamente
       const current=await this.read(path);
       body.sha=current.sha;
-      const r2=await fetch(url,{method:"PUT",headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json","Content-Type":"application/json"},body:JSON.stringify(body)});
+      const r2=await this._fetch(url,{method:"PUT",headers:hdrs,body:JSON.stringify(body)});
       if(!r2.ok){ const e=await r2.json(); throw new Error(e.message||`GitHub write error ${r2.status}`); }
       const j2=await r2.json();
       return j2.content.sha;
