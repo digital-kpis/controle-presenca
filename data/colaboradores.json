@@ -257,5 +257,12 @@
     "nome": "Victoria Aquino",
     "funcao": "Op. Loja",
     "turno": "manha"
+  },
+  {
+    "id": "c1787140320171",
+    "nome": "WILLIAN SAMPAIO",
+    "matricula": "40058643",
+    "funcao": "Op. Loja",
+    "turno": "noite"
   }
 ]
