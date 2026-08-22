@@ -612,6 +612,10 @@ function ControlePresenca({ onDesconectar }){
 
     // TELA ESCALA
     tela==="presenca"&&h("div",null,
+      h(ResumoDia,{
+        colaboradores, presencas, tiposStatus,
+        dataRef: isoDate(new Date()),
+      }),
       h("div",{style:S.subbar},
         h("div",{style:S.turnoChip},
           h("span",{style:{...S.turnoChipDot,background:turnoInfo.cor}}),
@@ -1046,6 +1050,78 @@ function TipoForm({initial,onClose,onSave}){
   );
 }
 
+// ====== RESUMO DO DIA ======
+function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef }) {
+  const hoje = isoDate(new Date());
+
+  // Conta por status para HOJE
+  const contagem = useMemo(() => {
+    const map = {};
+    colaboradores.forEach(c => {
+      const st = presencas[`${c.id}:${hoje}`] || "vazio";
+      map[st] = (map[st] || 0) + 1;
+    });
+    return map;
+  }, [colaboradores, presencas, hoje]);
+
+  const total = colaboradores.length;
+  const semLancamento = contagem["vazio"] || 0;
+  const comLancamento = total - semLancamento;
+
+  // Monta chips por tipo
+  const chips = tiposStatus
+    .map(t => ({ ...t, qtd: contagem[t.id] || 0 }))
+    .filter(t => t.qtd > 0);
+
+  const dataFmt = hoje.split("-").reverse().join("/");
+
+  return h("div", { style: S.resumoWrap },
+    h("div", { style: S.resumoHeader },
+      h("span", { style: S.resumoTitulo }, `Resumo de hoje — ${dataFmt}`),
+      h("span", { style: S.resumoSubtitulo },
+        `${comLancamento} lançados · ${semLancamento} sem marcação`
+      )
+    ),
+    h("div", { style: S.resumoChips },
+      chips.map(t =>
+        h("div", { key: t.id, style: {
+          display: "flex", alignItems: "center", gap: 6,
+          background: t.bg,
+          border: `1.5px solid ${t.color}`,
+          borderRadius: 10, padding: "6px 10px",
+          flexShrink: 0,
+        }},
+          h("span", { style: {
+            width: 26, height: 22, borderRadius: 6,
+            background: t.color,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 10, fontWeight: 900, color: "#FFF",
+          }}, t.short),
+          h("div", null,
+            h("div", { style: { fontSize: 18, fontWeight: 900, color: t.color, lineHeight: 1 } }, t.qtd),
+            h("div", { style: { fontSize: 10, color: t.color, opacity: 0.8, lineHeight: 1, marginTop: 1 } }, t.label)
+          )
+        )
+      ),
+      semLancamento > 0 && h("div", { style: {
+        display: "flex", alignItems: "center", gap: 6,
+        background: "#F4F1EA", border: "1.5px solid #D8D2C5",
+        borderRadius: 10, padding: "6px 10px", flexShrink: 0,
+      }},
+        h("span", { style: {
+          width: 26, height: 22, borderRadius: 6, background: "#BDC3C7",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 10, fontWeight: 900, color: "#FFF",
+        }}, "—"),
+        h("div", null,
+          h("div", { style: { fontSize: 18, fontWeight: 900, color: "#8A8478", lineHeight: 1 } }, semLancamento),
+          h("div", { style: { fontSize: 10, color: "#8A8478", lineHeight: 1, marginTop: 1 } }, "Sem marcação")
+        )
+      )
+    )
+  );
+}
+
 // ====== TELA ALMOÇO ======
 function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoData, onSave, tiposStatus }) {
 
@@ -1262,6 +1338,11 @@ const S={
   tabDot:{width:6,height:6,borderRadius:"50%",flexShrink:0},
   tabCount:{background:"#EFEBE2",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:700,color:"#8A8478"},
   tabDivider:{width:1,alignSelf:"stretch",background:"#E8E3D8",margin:"2px 2px",flexShrink:0},
+  resumoWrap:{background:"#FFF",borderBottom:"1px solid #EFEBE2",padding:"10px 16px 12px"},
+  resumoHeader:{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:8,flexWrap:"wrap"},
+  resumoTitulo:{fontSize:12,fontWeight:800,color:"#2B2620"},
+  resumoSubtitulo:{fontSize:11,color:"#9C9586"},
+  resumoChips:{display:"flex",gap:8,overflowX:"auto",paddingBottom:2},
   subbar:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,padding:"10px 16px 0"},
   turnoChip:{display:"flex",alignItems:"center",gap:6,background:"#FFF",border:"1px solid #EFEBE2",borderRadius:8,padding:"5px 10px"},
   turnoChipDot:{width:7,height:7,borderRadius:"50%"},
