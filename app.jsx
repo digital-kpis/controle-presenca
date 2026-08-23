@@ -1158,7 +1158,7 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
     return colaboradores
       .filter(c => {
         const st = presencas[`${c.id}:${almocoData}`];
-        return st && st !== "vazio" && st !== "falta" && st !== "folga";
+        return st === "presente"; // somente P confirmado
       })
       .sort((a,b) => {
         const ordem = ["manha","intermediario","tarde","noite"];
