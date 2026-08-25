@@ -52,5 +52,13 @@
     "color": "#E91E63",
     "bg": "#E91E6322",
     "fonte": "system"
+  },
+  {
+    "id": "t1787672073410",
+    "label": "X",
+    "short": "X",
+    "color": "#795548",
+    "bg": "#79554822",
+    "fonte": "system"
   }
 ]
