@@ -281,7 +281,8 @@
     "nome": "PAULO RICARDO",
     "matricula": "40059093",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 3
   },
   {
     "id": "c1787323411076",
