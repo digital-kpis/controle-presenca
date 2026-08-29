@@ -63,6 +63,10 @@ const FONTES = [
 ];
 
 const FUNCOES = ["Op. Loja","Pleno","Pleno PREV.","Líder","Estoque","Caixa"];
+const DIAS_SEMANA = [
+  {id:0,label:"Dom"}, {id:1,label:"Seg"}, {id:2,label:"Ter"},
+  {id:3,label:"Qua"}, {id:4,label:"Qui"}, {id:5,label:"Sex"}, {id:6,label:"Sáb"},
+];
 const WEEKDAY_LABELS = ["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 
 // ====== HELPERS DATA ======
@@ -417,19 +421,65 @@ function ControlePresenca({ onDesconectar }){
   },[tiposStatus, flushPresencas]);
 
   // ---- COLABORADORES ----
-  const handleSaveColab = useCallback(async colab=>{
-    let next;
-    if(colab.id && colaboradores.some(c=>c.id===colab.id)){
-      next = colaboradores.map(c=>c.id===colab.id?{...c,...colab}:c);
-    } else {
-      next = [...colaboradores,{...colab,id:`c${Date.now()}`}]
-        .sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+  // Gera datas de folga para ±1 ano a partir de hoje no dia da semana escolhido
+  const gerarFolgas = useCallback((colabId, diaSemana, presencasAtual) => {
+    if(diaSemana === null || diaSemana === undefined) return presencasAtual;
+    const idFolga = tiposStatus.find(t=>t.id==="folga")?.id || "folga";
+    const next = {...presencasAtual};
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    // Encontra o primeiro dia da semana escolhido a partir de 1 ano atrás
+    const inicio = new Date(hoje); inicio.setFullYear(inicio.getFullYear()-1);
+    const fim    = new Date(hoje); fim.setFullYear(fim.getFullYear()+1);
+    // Avança até o primeiro dia correto
+    while(inicio.getDay() !== diaSemana) inicio.setDate(inicio.getDate()+1);
+    // Preenche semana a semana
+    const d = new Date(inicio);
+    while(d <= fim){
+      next[`${colabId}:${isoDate(d)}`] = idFolga;
+      d.setDate(d.getDate()+7);
     }
-    setColaboradores(next);
-    await saveGitHub("data/colaboradores.json", next, "colaboradores");
-    showToast(colab.id?"Colaborador atualizado":"Colaborador cadastrado");
+    return next;
+  },[tiposStatus]);
+
+  const handleSaveColab = useCallback(async colab=>{
+    const isNovo = !colab.id || !colaboradores.some(c=>c.id===colab.id);
+    const colabId = colab.id || `c${Date.now()}`;
+    const colabFinal = {...colab, id:colabId};
+
+    let nextColabs;
+    if(isNovo){
+      nextColabs = [...colaboradores, colabFinal]
+        .sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+    } else {
+      nextColabs = colaboradores.map(c=>c.id===colabId?{...c,...colabFinal}:c);
+    }
+    setColaboradores(nextColabs);
+    await saveGitHub("data/colaboradores.json", nextColabs, "colaboradores");
+
+    // Gera folgas automáticas se um dia de folga foi definido
+    if(colabFinal.diaFolga !== null && colabFinal.diaFolga !== undefined){
+      // Se editou e mudou o dia, limpa folgas antigas antes
+      let base = {...presencas};
+      if(!isNovo){
+        const colabAntigo = colaboradores.find(c=>c.id===colabId);
+        if(colabAntigo?.diaFolga !== colabFinal.diaFolga){
+          // Remove todas as folgas antigas desse colaborador
+          const idFolga = tiposStatus.find(t=>t.id==="folga")?.id || "folga";
+          Object.keys(base).forEach(k=>{
+            if(k.startsWith(colabId+":") && base[k]===idFolga) delete base[k];
+          });
+        }
+      }
+      const nextPresencas = gerarFolgas(colabId, colabFinal.diaFolga, base);
+      setPresencas(nextPresencas);
+      await saveGitHub("data/presencas.json", nextPresencas, "presencas");
+      showToast(isNovo?"Colaborador cadastrado com folgas semanais":"Colaborador atualizado — folgas reorganizadas");
+    } else {
+      showToast(isNovo?"Colaborador cadastrado":"Colaborador atualizado");
+    }
+
     setShowCadastro(false); setEditingColab(null);
-  },[colaboradores,saveGitHub,showToast]);
+  },[colaboradores,presencas,tiposStatus,saveGitHub,gerarFolgas,showToast]);
 
   const handleDeleteColab = useCallback(async id=>{
     const next = colaboradores.filter(c=>c.id!==id);
@@ -892,34 +942,88 @@ function LancamentoModal({initial,colaboradores,onClose,onSave}){
 // ====== MODAL CADASTRO ======
 function CadastroModal({initial,onClose,onSave}){
   const isEdit=Boolean(initial&&initial.id);
-  const [nome,setNome]=useState(initial?.nome||"");
-  const [matricula,setMatricula]=useState(initial?.matricula||"");
-  const [funcao,setFuncao]=useState(initial?.funcao||FUNCOES[0]);
-  const [turno,setTurno]=useState(initial?.turno||"manha");
-  const [error,setError]=useState("");
+  const [nome,     setNome]     = useState(initial?.nome||"");
+  const [matricula,setMatricula]= useState(initial?.matricula||"");
+  const [funcao,   setFuncao]   = useState(initial?.funcao||FUNCOES[0]);
+  const [turno,    setTurno]    = useState(initial?.turno||"manha");
+  const [diaFolga, setDiaFolga] = useState(initial?.diaFolga!==undefined ? initial.diaFolga : null);
+  const [error,    setError]    = useState("");
+
   const submit=()=>{
     if(!nome.trim()){setError("Informe o nome.");return;}
     if(!matricula.trim()){setError("Informe a matrícula.");return;}
-    onSave({id:initial?.id,nome:nome.trim(),matricula:matricula.trim(),funcao,turno});
+    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga});
   };
+
   return h("div",{style:S.modalOverlay,onClick:onClose},
     h("div",{style:S.modalCard,onClick:e=>e.stopPropagation()},
       h("div",{style:S.modalHeader},
         h("h2",{style:S.modalTitle},isEdit?"Editar colaborador":"Novo colaborador"),
         h("button",{style:S.modalClose,onClick:onClose},h(X,{size:18}))
       ),
-      h("div",{style:S.formGroup},h("label",{style:S.label},"Nome completo"),h("input",{style:S.input,value:nome,onChange:e=>setNome(e.target.value),placeholder:"Ex.: Anna Caroline",autoFocus:true})),
-      h("div",{style:S.formGroup},h("label",{style:S.label},"Matrícula"),h("input",{style:S.input,value:matricula,onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")),placeholder:"Ex.: 7153570",inputMode:"numeric"})),
-      h("div",{style:S.formGroup},h("label",{style:S.label},"Função"),h("div",{style:S.chipRow},...FUNCOES.map(f=>h("button",{key:f,onClick:()=>setFuncao(f),style:{...S.chip,...(funcao===f?S.chipActive:{})}},f)))),
+
+      h("div",{style:S.formGroup},
+        h("label",{style:S.label},"Nome completo"),
+        h("input",{style:S.input,value:nome,onChange:e=>setNome(e.target.value),placeholder:"Ex.: Anna Caroline",autoFocus:true})
+      ),
+      h("div",{style:S.formGroup},
+        h("label",{style:S.label},"Matrícula"),
+        h("input",{style:S.input,value:matricula,onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")),placeholder:"Ex.: 7153570",inputMode:"numeric"})
+      ),
+      h("div",{style:S.formGroup},
+        h("label",{style:S.label},"Função"),
+        h("div",{style:S.chipRow},...FUNCOES.map(f=>h("button",{key:f,onClick:()=>setFuncao(f),style:{...S.chip,...(funcao===f?S.chipActive:{})}},f)))
+      ),
       h("div",{style:S.formGroup},
         h("label",{style:S.label},"Turno"),
-        h("div",{style:S.chipRow},...TURNOS.map(t=>h("button",{key:t.id,onClick:()=>setTurno(t.id),style:{...S.chip,...(turno===t.id?{background:t.cor,borderColor:t.cor,color:"#FFF",fontWeight:700,boxShadow:`0 2px 8px ${t.cor}55`}:{})}},t.label))),
+        h("div",{style:S.chipRow},...TURNOS.map(t=>h("button",{key:t.id,onClick:()=>setTurno(t.id),
+          style:{...S.chip,...(turno===t.id?{background:t.cor,borderColor:t.cor,color:"#FFF",fontWeight:700,boxShadow:`0 2px 8px ${t.cor}55`}:{})}
+        },t.label))),
         h("p",{style:S.hintText},TURNOS.find(t=>t.id===turno)?.horario)
       ),
+
+      // Dia de folga semanal
+      h("div",{style:S.formGroup},
+        h("label",{style:S.label},"Dia de folga semanal (DSR)"),
+        h("p",{style:{...S.hintText,marginBottom:8}},"As folgas serão lançadas automaticamente toda semana neste dia."),
+        h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+          // Botão "Nenhum"
+          h("button",{
+            onClick:()=>setDiaFolga(null),
+            style:{
+              ...S.chip,
+              ...(diaFolga===null?{...S.chipActive,background:"#8A8478",borderColor:"#8A8478"}:{})
+            }
+          },"Nenhum"),
+          ...DIAS_SEMANA.map(d=>h("button",{
+            key:d.id,
+            onClick:()=>setDiaFolga(d.id),
+            style:{
+              ...S.chip,
+              ...(diaFolga===d.id?{
+                background:"#7F8C8D",borderColor:"#7F8C8D",
+                color:"#FFF",fontWeight:700,
+                boxShadow:"0 2px 8px #7F8C8D55"
+              }:{})
+            }
+          },d.label))
+        ),
+        diaFolga!==null&&h("div",{style:{
+          marginTop:8,padding:"8px 12px",borderRadius:8,
+          background:"#EAEDED",border:"1px solid #BDC3C7",
+          fontSize:12,color:"#5D6D7E",fontWeight:600,
+        }},
+          `✓ Folga toda ${DIAS_SEMANA.find(d=>d.id===diaFolga)?.label} — lançada para ±1 ano automaticamente`
+        )
+      ),
+
       error&&h("p",{style:S.errorText},error),
       h("div",{style:S.modalActions},
         h("button",{style:S.btnGhost,onClick:onClose},"Cancelar"),
-        h("button",{style:S.btnPrimary,onClick:submit},h(Check,{size:15,strokeWidth:2.5}),isEdit?"Salvar":"Cadastrar")
+        h("button",{style:S.btnPrimary,onClick:submit},
+          h(Check,{size:15,strokeWidth:2.5}),
+          isEdit?"Salvar":"Cadastrar"
+        )
       )
     )
   );
