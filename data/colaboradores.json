@@ -208,7 +208,8 @@
     "nome": "LILIAN NUNES DA SILVA",
     "matricula": "40058373",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 3
   },
   {
     "id": "c6",
