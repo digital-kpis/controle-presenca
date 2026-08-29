@@ -310,7 +310,8 @@
     "nome": "Sulamita Santos",
     "matricula": "40058109",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 2
   },
   {
     "id": "c27",
