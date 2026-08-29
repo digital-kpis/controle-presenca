@@ -230,7 +230,8 @@
     "matricula": "7029322",
     "nome": "Marcelo da Silva",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 3
   },
   {
     "id": "c1787140287429",
