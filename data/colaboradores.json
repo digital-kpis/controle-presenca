@@ -161,7 +161,8 @@
     "matricula": "7029578",
     "nome": "Jonas Felipe",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 5
   },
   {
     "id": "c1787145760468",
