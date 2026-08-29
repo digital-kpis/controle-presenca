@@ -352,7 +352,8 @@
     "nome": "TAMIRIS NICACIO",
     "matricula": "40059110",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "manha",
+    "diaFolga": 3
   },
   {
     "id": "c1787145750930",
