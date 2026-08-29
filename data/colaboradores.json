@@ -344,7 +344,8 @@
     "matricula": "7122659",
     "nome": "Talia Mesquita",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 1
   },
   {
     "id": "c1787145725276",
