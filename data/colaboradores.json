@@ -200,7 +200,8 @@
     "matricula": "7115261",
     "nome": "Leonard Gerard",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 2
   },
   {
     "id": "c1786713124791",
