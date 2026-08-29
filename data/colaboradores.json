@@ -259,7 +259,8 @@
     "nome": "MATHEUS CHEREM",
     "matricula": "40060583",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 5
   },
   {
     "id": "c1787671887613",
