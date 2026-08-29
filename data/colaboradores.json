@@ -192,7 +192,8 @@
     "matricula": "7160542",
     "nome": "Kamili Conceicao",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 4
   },
   {
     "id": "c23",
