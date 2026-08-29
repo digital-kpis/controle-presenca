@@ -320,7 +320,8 @@
     "matricula": "7014252",
     "nome": "Suelen da Silva",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 5
   },
   {
     "id": "c1786555918386",
