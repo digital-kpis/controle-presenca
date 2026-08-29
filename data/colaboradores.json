@@ -169,7 +169,8 @@
     "nome": "JOSE LUIZ DA SILVA JORGE",
     "matricula": "40059345",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 2
   },
   {
     "id": "c5",
