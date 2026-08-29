@@ -124,7 +124,8 @@
     "nome": "GABRIELLE CAMPOS DOMINGOS",
     "matricula": "40059049",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 1
   },
   {
     "id": "c1786561186008",
