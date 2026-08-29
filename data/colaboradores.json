@@ -305,7 +305,8 @@
     "nome": "ROSICLEIA PAIXAO BRASIL",
     "matricula": "40058980",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 5
   },
   {
     "id": "c10",
