@@ -274,7 +274,8 @@
     "nome": "RAQUEL ARANTES DA SILVA",
     "matricula": "40059496",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 2
   },
   {
     "id": "c1787140305165",
