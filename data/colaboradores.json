@@ -374,6 +374,7 @@
     "nome": "YURI RODRIGUES",
     "matricula": "40060722",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 5
   }
 ]
