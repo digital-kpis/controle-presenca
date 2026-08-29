@@ -12,7 +12,8 @@
     "matricula": "6926177",
     "nome": "Alohan da Costa",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 2
   },
   {
     "id": "c1787671757363",
