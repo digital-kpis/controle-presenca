@@ -336,7 +336,8 @@
     "matricula": "7164289",
     "nome": "Taissa Ferreira",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 1
   },
   {
     "id": "c26",
