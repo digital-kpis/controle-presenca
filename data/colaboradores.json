@@ -97,7 +97,8 @@
     "matricula": "7237308",
     "nome": "Fernanda Pereira",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "manha",
+    "diaFolga": 3
   },
   {
     "id": "c4",
