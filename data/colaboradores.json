@@ -4,7 +4,8 @@
     "matricula": "6465951",
     "nome": "Alfredo Nascimento",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 1
   },
   {
     "id": "c17",
