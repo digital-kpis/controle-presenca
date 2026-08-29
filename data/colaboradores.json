@@ -76,7 +76,8 @@
     "matricula": "7216165",
     "nome": "Deivison Vieira",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 2
   },
   {
     "id": "c1787145918848",
