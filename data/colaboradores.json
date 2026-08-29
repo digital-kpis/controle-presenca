@@ -184,7 +184,8 @@
     "nome": "JUAN HENRIQUE LOPES DA LUZ",
     "matricula": "40059348",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 4
   },
   {
     "id": "c22",
