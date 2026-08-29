@@ -18,7 +18,8 @@
     "nome": "Ana Beatriz",
     "matricula": "40060249",
     "funcao": "Op. Loja",
-    "turno": "manha"
+    "turno": "manha",
+    "diaFolga": 1
   },
   {
     "id": "c1",
