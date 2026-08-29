@@ -111,7 +111,8 @@
     "matricula": "5361060",
     "nome": "Gabriel Martins",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 3
   },
   {
     "id": "c1787145734331",
