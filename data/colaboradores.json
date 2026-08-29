@@ -133,7 +133,8 @@
     "matricula": "4275195",
     "nome": "Gleyce Kelly",
     "funcao": "Op. Loja",
-    "turno": "intermediario"
+    "turno": "intermediario",
+    "diaFolga": 5
   },
   {
     "id": "c29",
