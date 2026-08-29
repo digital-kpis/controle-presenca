@@ -56,7 +56,8 @@
     "matricula": "7237316",
     "nome": "Daniele Teixeira",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 4
   },
   {
     "id": "c3",
