@@ -430,8 +430,9 @@ function ControlePresenca({ onDesconectar }){
     const next = {...presencasAtual};
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     // Encontra o primeiro dia da semana escolhido a partir de 1 ano atrás
-    const inicio = new Date(hoje); inicio.setFullYear(inicio.getFullYear()-1);
-    const fim    = new Date(hoje); fim.setFullYear(fim.getFullYear()+1);
+    // Gera folgas para 4 semanas passadas + 12 semanas futuras (~4 meses)
+    const inicio = new Date(hoje); inicio.setDate(inicio.getDate()-28);
+    const fim    = new Date(hoje); fim.setDate(fim.getDate()+84);
     // Avança até o primeiro dia correto
     while(inicio.getDay() !== diaSemana) inicio.setDate(inicio.getDate()+1);
     // Preenche semana a semana
