@@ -39,10 +39,11 @@
   },
   {
     "id": "c1787671805976",
-    "nome": "CAMILA MACIENTE (TRE)",
+    "nome": "CAMILA",
     "matricula": "40060363",
     "funcao": "Op. Loja",
-    "turno": "manha"
+    "turno": "manha",
+    "diaFolga": null
   },
   {
     "id": "c2",
