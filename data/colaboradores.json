@@ -156,7 +156,8 @@
     "nome": "IGOR SANTANA GALLART",
     "matricula": "40059338",
     "funcao": "Op. Loja",
-    "turno": "noite"
+    "turno": "noite",
+    "diaFolga": 4
   },
   {
     "id": "c21",
