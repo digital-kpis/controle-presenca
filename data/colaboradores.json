@@ -271,7 +271,8 @@
     "nome": "MILENA ALVES",
     "matricula": "40060593",
     "funcao": "Op. Loja",
-    "turno": "tarde"
+    "turno": "tarde",
+    "diaFolga": 1
   },
   {
     "id": "c9",
