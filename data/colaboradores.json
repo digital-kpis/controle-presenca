@@ -240,7 +240,8 @@
     "nome": "MARCELO HENRIQUE",
     "matricula": "40059360",
     "funcao": "Op. Loja",
-    "turno": "noite"
+    "turno": "noite",
+    "diaFolga": 2
   },
   {
     "id": "c8",
