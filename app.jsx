@@ -19,6 +19,7 @@ const Settings     = p => h(Icon,p, h("circle",{cx:12,cy:12,r:3}), h("path",{d:"
 const Pencil       = p => h(Icon,p, h("path",{d:"M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"}));
 const TrendingUp   = p => h(Icon,p, h("polyline",{points:"22 7 13.5 15.5 8.5 10.5 2 17"}), h("polyline",{points:"16 7 22 7 22 13"}));
 const UtensilsCrossed = p => h(Icon,p, h("path",{d:"M3 3l18 18"}), h("path",{d:"M14.28 14.28A4 4 0 1 0 9.73 9.72"}), h("path",{d:"M21 15a3 3 0 1 1-6 0"}), h("path",{d:"M3 7v2a4 4 0 0 0 4 4h0"}), h("path",{d:"M7 3v4"}));
+const Printer      = p => h(Icon,p, h("polyline",{points:"6 9 6 2 18 2 18 9"}), h("path",{d:"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"}), h("rect",{x:6,y:14,width:12,height:8}));
 const RefreshCw    = p => h(Icon,p, h("path",{d:"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"}), h("path",{d:"M21 3v5h-5"}), h("path",{d:"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"}), h("path",{d:"M8 16H3v5"}));
 const Save         = p => h(Icon,p, h("path",{d:"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"}), h("polyline",{points:"17 21 17 13 7 13 7 21"}), h("polyline",{points:"7 3 7 8 15 8"}));
 
@@ -32,11 +33,11 @@ const TURNOS = [
 const VISAO_TODOS = { id:"todos", label:"Todos", horario:"Todos os turnos", cor:"#2B2620" };
 
 const STATUS_SEED = [
-  { id:"presente", label:"Presente",    short:"P",  color:"#1A7A4A", bg:"#D4F0E0" },
-  { id:"falta",    label:"Falta",       short:"F",  color:"#C0392B", bg:"#FADBD8" },
-  { id:"folga",    label:"Folga (DSR)", short:"D",  color:"#7F8C8D", bg:"#EAEDED" },
-  { id:"ferias",   label:"Férias",      short:"FF", color:"#D68910", bg:"#FDEBD0" },
-  { id:"atestado", label:"Atestado",    short:"AT", color:"#6C3483", bg:"#E8DAEF" },
+  { id:"presente", label:"Presente",    short:"P",  color:"#0A8043", bg:"#C8F0D8" },
+  { id:"falta",    label:"Falta",       short:"F",  color:"#D32F2F", bg:"#FFCDD2" },
+  { id:"folga",    label:"Folga (DSR)", short:"D",  color:"#546E7A", bg:"#ECEFF1" },
+  { id:"ferias",   label:"Férias",      short:"FF", color:"#E65100", bg:"#FFE0B2" },
+  { id:"atestado", label:"Atestado",    short:"AT", color:"#6A1B9A", bg:"#E1BEE7" },
 ];
 const STATUS_VAZIO = { id:"vazio", label:"Não marcado", short:"", color:"#BDC3C7", bg:"#FFFFFF" };
 
@@ -281,6 +282,7 @@ function ControlePresenca({ onDesconectar }){
   const [showLanc,     setShowLanc]     = useState(false);
   const [editingLanc,  setEditingLanc]  = useState(null);
   const [bhFiltro,     setBhFiltro]     = useState(null);
+  const [showPrint,    setShowPrint]    = useState(false);
   const [almocos,      setAlmocos]      = useState({});  // { "colabId:isoDate": {saida, retorno} }
   const [almocoData,   setAlmocoData]   = useState(()=>isoDate(new Date()));
   const [toast,        setToast]        = useState(null);
@@ -615,7 +617,10 @@ function ControlePresenca({ onDesconectar }){
           pendentes>0&&!salvando&&h("span",{style:S.pendenteBadge},`${pendentes} ✎`),
           salvando&&h("span",{style:S.salvandoBadge},"Salvando…"),
           h("button",{style:S.iconBtn2,onClick:sincronizar,title:"Sincronizar com GitHub"},
-            h(RefreshCw,{size:16,color:"#5C5648",strokeWidth:2.2})
+            h(RefreshCw,{size:16,color:"#C9BC9A",strokeWidth:2.2})
+          ),
+          h("button",{style:{...S.iconBtn2},onClick:()=>setShowPrint(true),title:"Imprimir escala da semana"},
+            h(Printer,{size:16,color:"#C9BC9A",strokeWidth:2.2})
           ),
           h("button",{style:{...S.iconBtn2,fontSize:10,fontWeight:700,color:"#9C9586",padding:"0 8px",width:"auto"},
             onClick:onDesconectar,title:"Reconfigurar GitHub"},
@@ -760,7 +765,11 @@ function ControlePresenca({ onDesconectar }){
         )
       )
     ),
-    toast&&h("div",{style:{...S.toast,background:toast.err?"#C0392B":"#2B2620"}},toast.msg)
+    toast&&h("div",{style:{...S.toast,background:toast.err?"#C0392B":"#2B2620"}},toast.msg),
+    showPrint&&h(PrintModal,{
+      colaboradores, presencas, tiposStatus, weekDays,
+      onClose:()=>setShowPrint(false),
+    })
   );
 }
 
@@ -1403,6 +1412,169 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
   );
 }
 
+// ====== MODAL DE IMPRESSÃO ======
+function PrintModal({ colaboradores, presencas, tiposStatus, weekDays, onClose }) {
+
+  const getStatus = (colabId, dateIso) => {
+    const id = presencas[`${colabId}:${dateIso}`] || "vazio";
+    if(id === "vazio") return { short:"", color:"#BDC3C7", bg:"#F8F8F8", label:"" };
+    return tiposStatus.find(t=>t.id===id) || { short:id, color:"#999", bg:"#EEE", label:id };
+  };
+
+  const imprimir = () => {
+    const semana = `${pad2(weekDays[0].getDate())}/${pad2(weekDays[0].getMonth()+1)} – ${pad2(weekDays[6].getDate())}/${pad2(weekDays[6].getMonth()+1)}/${weekDays[6].getFullYear()}`;
+    const colsWidth = [200, ...weekDays.map(()=>70)];
+
+    // Agrupa por turno
+    const grupos = TURNOS.map(t=>({
+      turno:t,
+      items: colaboradores.filter(c=>c.turno===t.id).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"))
+    })).filter(g=>g.items.length>0);
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<title>Escala ${semana}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1A1208; background: #FFF; }
+  .header { background: #1A1208; color: #FFF; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 15px; }
+  .header p  { font-size: 11px; opacity: .7; margin-top:2px; }
+  .semana { font-size: 13px; font-weight: bold; color: #FF6D00; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #2C1F0A; color: #FAF8F4; padding: 6px 4px; text-align: center; font-size: 10px; border: 1px solid #3D2E10; }
+  th.nome { text-align: left; padding-left: 8px; min-width: 180px; }
+  td { padding: 5px 4px; border: 1px solid #E8E0D0; text-align: center; vertical-align: middle; }
+  td.nome { text-align: left; padding-left: 8px; }
+  td .nm { font-weight: 700; font-size: 11px; }
+  td .mt { font-size: 9px; color: #888; }
+  .badge { display: inline-block; min-width: 28px; padding: 2px 5px; border-radius: 5px; font-weight: 900; font-size: 11px; }
+  .turno-header td { background: #F0EBE0; border-left: 4px solid; font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .today th { background: #E65100; }
+  .today-col { background: #FFF3E0 !important; }
+  tr:nth-child(even) td { background: #FAFAF8; }
+  .legenda { display: flex; gap: 10px; flex-wrap: wrap; padding: 6px 0; margin-top: 6px; }
+  .leg-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+  .leg-swatch { width: 18px; height: 14px; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-weight: 900; font-size: 9px; color: #FFF; }
+  .totais { margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .total-item { background: #F0EBE0; border-radius: 6px; padding: 4px 10px; }
+  .total-item strong { font-size: 14px; display: block; }
+  .total-item span { font-size: 9px; color: #666; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Controle de Presença</h1>
+    <p>${colaboradores.length} colaboradores · ${grupos.length} turnos</p>
+  </div>
+  <div class="semana">${semana}</div>
+</div>
+
+<!-- Legenda -->
+<div class="legenda">
+  ${tiposStatus.map(t=>`<div class="leg-item"><span class="leg-swatch" style="background:${t.color}">${t.short}</span>${t.label}</div>`).join("")}
+  <div class="leg-item"><span class="leg-swatch" style="background:#BDC3C7">—</span>Sem marcação</div>
+</div>
+
+<!-- Totais do dia de hoje -->
+${(()=>{
+  const hoje = isoDate(new Date());
+  const cnt = {};
+  colaboradores.forEach(c=>{ const s=presencas[c.id+":"+hoje]||"vazio"; cnt[s]=(cnt[s]||0)+1; });
+  const parts = tiposStatus.filter(t=>cnt[t.id]).map(t=>`<div class="total-item"><strong style="color:${t.color}">${cnt[t.id]}</strong><span>${t.label}</span></div>`);
+  if(cnt["vazio"]) parts.push(`<div class="total-item"><strong style="color:#BDC3C7">${cnt["vazio"]}</strong><span>Sem marcação</span></div>`);
+  return parts.length ? `<div class="totais">${parts.join("")}</div>` : "";
+})()}
+
+<table>
+  <thead>
+    <tr>
+      <th class="nome">Colaborador</th>
+      ${weekDays.map((d,i)=>{
+        const isToday = isoDate(d)===isoDate(new Date());
+        return `<th style="${isToday?"background:#E65100;":""}">
+          <div>${WEEKDAY_LABELS[d.getDay()]}</div>
+          <div>${pad2(d.getDate())}/${pad2(d.getMonth()+1)}</div>
+        </th>`;
+      }).join("")}
+    </tr>
+  </thead>
+  <tbody>
+    ${grupos.map(({turno:t, items})=>`
+      <tr class="turno-header">
+        <td colspan="${1+weekDays.length}" style="border-left-color:${t.cor}; color:${t.cor}">
+          ${t.label} · ${t.horario} · ${items.length} pessoa${items.length!==1?"s":""}
+        </td>
+      </tr>
+      ${items.map((c,i)=>{
+        const isEven = i%2===0;
+        return `<tr>
+          <td class="nome" style="${isEven?"":"background:#FAFAF8"}">
+            <div class="nm">${c.nome}</div>
+            <div class="mt">${c.matricula} · ${c.funcao}</div>
+          </td>
+          ${weekDays.map(d=>{
+            const di = isoDate(d);
+            const isToday = di===isoDate(new Date());
+            const s = getStatus(c.id, di);
+            return `<td style="${isEven?"":"background:#FAFAF8"}${isToday?"background:#FFF3E0;":""}" class="${isToday?"today-col":""}">
+              ${s.short ? `<span class="badge" style="background:${s.color};color:#FFF">${s.short}</span>` : `<span style="color:#DDD">·</span>`}
+            </td>`;
+          }).join("")}
+        </tr>`;
+      }).join("")}
+    `).join("")}
+  </tbody>
+</table>
+
+<div style="margin-top:12px;font-size:9px;color:#AAA;text-align:right">
+  Impresso em ${new Date().toLocaleString("pt-BR")} · Controle de Presença
+</div>
+
+<script>window.onload=()=>window.print();</script>
+</body>
+</html>`;
+
+    const w = window.open("","_blank","width=900,height=700");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const semanaLabel = `${pad2(weekDays[0].getDate())}/${pad2(weekDays[0].getMonth()+1)} – ${pad2(weekDays[6].getDate())}/${pad2(weekDays[6].getMonth()+1)}`;
+
+  return h("div",{style:S.modalOverlay,onClick:onClose},
+    h("div",{style:{...S.modalCard,maxWidth:400},onClick:e=>e.stopPropagation()},
+      h("div",{style:S.modalHeader},
+        h("h2",{style:S.modalTitle},"Imprimir escala"),
+        h("button",{style:S.modalClose,onClick:onClose},h(X,{size:18}))
+      ),
+      h("div",{style:{background:"#F0EBE0",borderRadius:10,padding:"14px",marginBottom:16}},
+        h("p",{style:{fontSize:13,fontWeight:700,color:"#2B2620",margin:"0 0 4px"}},"Semana selecionada"),
+        h("p",{style:{fontSize:18,fontWeight:900,color:"#E65100",margin:0}},semanaLabel),
+        h("p",{style:{fontSize:11.5,color:"#6B6458",margin:"6px 0 0"}},
+          `${colaboradores.length} colaboradores · todos os turnos`
+        )
+      ),
+      h("p",{style:{fontSize:12.5,color:"#6B6458",marginBottom:16,lineHeight:1.6}},
+        "A impressão abre numa nova janela com a escala completa da semana, agrupada por turno, com os status de cada dia e o resumo de hoje."
+      ),
+      h("div",{style:S.modalActions},
+        h("button",{style:S.btnGhost,onClick:onClose},"Cancelar"),
+        h("button",{style:{...S.btnPrimary,background:"#E65100",boxShadow:"0 2px 8px #E6510066"},onClick:imprimir},
+          h(Printer,{size:15,strokeWidth:2.5,color:"#FFF"}), "Imprimir agora"
+        )
+      )
+    )
+  );
+}
+
 // ====== ROOT ======
 function Root(){
   const [configurado,setConfigurado]=useState(GH.configured());
@@ -1423,29 +1595,29 @@ const S={
   configCard:{background:"#FFF",borderRadius:16,padding:"24px 20px",maxWidth:460,width:"100%",margin:"0 12px",boxShadow:"0 2px 20px rgba(43,38,32,0.1)"},
   configTitle:{fontFamily:FD,fontSize:20,fontWeight:700,margin:"0 0 6px"},
   configSub:{fontSize:13,color:"#6B6458",margin:"0 0 20px",lineHeight:1.6},
-  header:{background:"#FFF",borderBottom:"1px solid #EFEBE2",position:"sticky",top:0,zIndex:10},
+  header:{background:"#1A1208",borderBottom:"1px solid #3D2E10",position:"sticky",top:0,zIndex:10},
   headerTop:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",gap:10},
   brandRow:{display:"flex",alignItems:"center",gap:10,minWidth:0},
   brandMark:{width:34,height:34,borderRadius:9,background:"#2B2620",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0},
-  brandTitle:{fontFamily:FD,fontSize:17,fontWeight:700,margin:0,lineHeight:1.2,whiteSpace:"nowrap"},
-  brandSub:{fontSize:11,color:"#9C9586",margin:"2px 0 0"},
-  addBtn:{display:"flex",alignItems:"center",gap:5,background:"#2B2620",color:"#FAF8F4",border:"none",borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:600,flexShrink:0},
-  iconBtn2:{width:32,height:32,borderRadius:8,border:"1px solid #EFEBE2",background:"#FFF",display:"flex",alignItems:"center",justifyContent:"center"},
+  brandTitle:{fontFamily:FD,fontSize:17,fontWeight:700,margin:0,lineHeight:1.2,whiteSpace:"nowrap",color:"#FAF8F4"},
+  brandSub:{fontSize:11,color:"#C9BC9A",margin:"2px 0 0"},
+  addBtn:{display:"flex",alignItems:"center",gap:5,background:"#E65100",color:"#FFF",border:"none",borderRadius:8,padding:"8px 12px",fontSize:12.5,fontWeight:700,flexShrink:0,boxShadow:"0 2px 8px #E6510066"},
+  iconBtn2:{width:32,height:32,borderRadius:8,border:"1px solid #3D2E10",background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center"},
   pendenteBadge:{fontSize:11,fontWeight:700,color:"#D68910",background:"#FEF9F0",border:"1px solid #F9A825",borderRadius:999,padding:"3px 8px"},
   salvandoBadge:{fontSize:11,fontWeight:700,color:"#2980B9",background:"#EBF5FB",border:"1px solid #3498DB",borderRadius:999,padding:"3px 8px"},
-  navTabs:{display:"flex",borderBottom:"2px solid #EFEBE2",margin:"0 16px"},
-  navTab:{display:"flex",alignItems:"center",gap:6,padding:"10px 12px",fontSize:13,fontWeight:600,color:"#9C9586",border:"none",background:"transparent",borderBottom:"2px solid transparent",marginBottom:-2,cursor:"pointer"},
-  navTabAtivo:{color:"#2B2620",borderBottomColor:"#2B2620",fontWeight:800},
-  tabsRow:{display:"flex",gap:5,padding:"8px 12px",overflowX:"auto",alignItems:"center"},
+  navTabs:{display:"flex",borderBottom:"2px solid #3D2E10",margin:"0",padding:"0 16px",background:"#1A1208"},
+  navTab:{display:"flex",alignItems:"center",gap:6,padding:"10px 12px",fontSize:13,fontWeight:600,color:"#C9BC9A",border:"none",background:"transparent",borderBottom:"2px solid transparent",marginBottom:-2,cursor:"pointer"},
+  navTabAtivo:{color:"#FF6D00",borderBottomColor:"#FF6D00",fontWeight:800},
+  tabsRow:{display:"flex",gap:5,padding:"8px 12px",overflowX:"auto",alignItems:"center",background:"#F8F4EE",borderBottom:"1px solid #E8E0D0"},
   tab:{display:"flex",alignItems:"center",gap:5,background:"#F4F1EA",border:"1.5px solid transparent",borderRadius:999,padding:"6px 11px",fontSize:12,whiteSpace:"nowrap",flexShrink:0},
   tabActive:{background:"#FFF",boxShadow:"0 1px 3px rgba(43,38,32,0.08)"},
   tabDot:{width:6,height:6,borderRadius:"50%",flexShrink:0},
   tabCount:{background:"#EFEBE2",borderRadius:999,padding:"1px 6px",fontSize:10,fontWeight:700,color:"#8A8478"},
   tabDivider:{width:1,alignSelf:"stretch",background:"#E8E3D8",margin:"2px 2px",flexShrink:0},
-  resumoWrap:{background:"#FFF",borderBottom:"1px solid #EFEBE2",padding:"10px 16px 12px"},
+  resumoWrap:{background:"linear-gradient(135deg,#1A1208 0%,#2C1F0A 100%)",borderBottom:"2px solid #FF6D00",padding:"10px 16px 14px"},
   resumoHeader:{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:8,flexWrap:"wrap"},
-  resumoTitulo:{fontSize:12,fontWeight:800,color:"#2B2620"},
-  resumoSubtitulo:{fontSize:11,color:"#9C9586"},
+  resumoTitulo:{fontSize:12,fontWeight:800,color:"#FAF8F4"},
+  resumoSubtitulo:{fontSize:11,color:"#C9BC9A"},
   resumoChips:{display:"flex",gap:8,overflowX:"auto",paddingBottom:2},
   subbar:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,padding:"10px 16px 0"},
   turnoChip:{display:"flex",alignItems:"center",gap:6,background:"#FFF",border:"1px solid #EFEBE2",borderRadius:8,padding:"5px 10px"},
@@ -1463,9 +1635,9 @@ const S={
   tableWrap:{padding:"4px 16px 0"},
   scrollArea:{overflowX:"auto",borderRadius:12,border:"1px solid #EFEBE2",background:"#FFF"},
   table:{borderCollapse:"collapse",width:"100%",minWidth:580},
-  thName:{textAlign:"left",fontSize:10,fontWeight:700,color:"#9C9586",textTransform:"uppercase",letterSpacing:"0.05em",padding:"9px 12px",position:"sticky",left:0,background:"#FBFAF7",borderBottom:"1px solid #EFEBE2",minWidth:180,zIndex:2},
-  thDay:{textAlign:"center",padding:"7px 3px",borderBottom:"1px solid #EFEBE2",borderLeft:"1px solid #F4F1EA",color:"#6B6458",minWidth:52},
-  thDayToday:{background:"#FEF9F0"},
+  thName:{textAlign:"left",fontSize:10,fontWeight:700,color:"#5C5648",textTransform:"uppercase",letterSpacing:"0.05em",padding:"9px 12px",position:"sticky",left:0,background:"#F0EBE0",borderBottom:"2px solid #D8CDB8",minWidth:180,zIndex:2},
+  thDay:{textAlign:"center",padding:"7px 3px",borderBottom:"2px solid #D8CDB8",borderLeft:"1px solid #E8E0D0",color:"#3D3028",fontWeight:700,minWidth:52},
+  thDayToday:{background:"#FFF3E0",borderBottomColor:"#E65100"},
   thDaySunday:{background:"#FBFAF7"},
   tdName:{padding:"7px 12px",borderBottom:"1px solid #F4F1EA",position:"sticky",left:0,backgroundColor:"#FFF",zIndex:1},
   nameCell:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6},
@@ -1474,7 +1646,7 @@ const S={
   nameActions:{display:"flex",gap:3,flexShrink:0},
   iconBtn:{width:22,height:22,borderRadius:6,border:"none",background:"transparent",color:"#9C9586",display:"flex",alignItems:"center",justifyContent:"center"},
   tdCell:{padding:"5px 3px",borderBottom:"1px solid #F4F1EA",borderLeft:"1px solid #F4F1EA",textAlign:"center"},
-  cellBtn:{width:36,height:30,borderRadius:7,border:"1px solid",fontSize:11,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all 0.1s"},
+  cellBtn:{width:38,height:32,borderRadius:8,border:"2px solid",fontSize:11.5,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all 0.12s",letterSpacing:"-0.3px"},
   groupHeaderCell:{padding:"8px 12px",background:"#F4F1EA",borderTop:"1px solid #EFEBE2",borderBottom:"1px solid #EFEBE2",borderLeft:"3px solid",position:"sticky",left:0},
   groupHeaderDot:{display:"inline-block",width:7,height:7,borderRadius:"50%",marginRight:7},
   groupHeaderText:{fontSize:12,fontWeight:800,color:"#2B2620"},
