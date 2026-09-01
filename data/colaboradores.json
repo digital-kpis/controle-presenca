@@ -68,10 +68,11 @@
   },
   {
     "id": "c1787671864515",
-    "nome": "DAYENE DE SOUZA LOPES (TRE)",
+    "nome": "DAYENE DE SOUZA",
     "matricula": "40060212",
     "funcao": "Op. Loja",
-    "turno": "manha"
+    "turno": "manha",
+    "diaFolga": null
   },
   {
     "id": "c19",
