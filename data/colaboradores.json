@@ -384,7 +384,8 @@
     "nome": "WILLIAN SAMPAIO",
     "matricula": "40058643",
     "funcao": "Op. Loja",
-    "turno": "noite"
+    "turno": "noite",
+    "diaFolga": 3
   },
   {
     "id": "c1787865403410",
