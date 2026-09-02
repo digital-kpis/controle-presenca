@@ -93,72 +93,72 @@ function fmtSaldo(min){
 function horaParaMin(str){ const [hh,mm]=(str||"00:00").split(":").map(Number); return (hh||0)*60+(mm||0); }
 function minParaHora(min){ const abs=Math.abs(min); return `${pad2(Math.floor(abs/60))}:${pad2(abs%60)}`; }
 
-// ====== GITHUB STORAGE ======
-// Lê/salva arquivos JSON direto no repositório via GitHub API
-// Token pessoal (classic) com permissão "repo" é necessário
-
-const GH = {
-  get owner(){ return localStorage.getItem("gh_owner")||""; },
-  get repo(){ return localStorage.getItem("gh_repo")||""; },
-  get token(){ return localStorage.getItem("gh_token")||""; },
-  get branch(){ return localStorage.getItem("gh_branch")||"main"; },
-  configured(){ return !!(this.owner && this.repo && this.token); },
-
-  async _fetch(url, opts, tentativas=3){
-    for(let i=0;i<tentativas;i++){
-      try{ return await fetch(url,opts); }
-      catch(e){
-        if(i===tentativas-1) throw new Error("Sem conexão com o GitHub. Verifique sua internet.");
-        await new Promise(r=>setTimeout(r,1200*(i+1)));
-      }
-    }
-  },
-
-  async read(path){
-    const url=`https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}?ref=${this.branch}`;
-    const r=await this._fetch(url,{headers:{"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json"}});
-    if(r.status===401) throw new Error("Token inválido ou expirado. Reconfigure.");
-    if(r.status===403) throw new Error("Sem permissão. Token precisa do escopo 'repo'.");
-    if(r.status===404) return { data:null, sha:null };
-    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.message||`GitHub erro ${r.status}`); }
-    const j=await r.json();
-    const decoded = decodeURIComponent(atob(j.content.replace(/\n/g,"")).split("").map(c=>"%"+c.charCodeAt(0).toString(16).padStart(2,"0")).join(""));
-    return { data: JSON.parse(decoded), sha: j.sha };
-  },
-
-  async write(path, data, sha){
-    const url=`https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}`;
-    const json = JSON.stringify(data,null,2);
-    const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,(_,p1)=>String.fromCharCode(parseInt(p1,16))));
-    const body={ message:`update ${path}`, content:encoded, branch:this.branch };
-    if(sha) body.sha=sha;
-    const hdrs={"Authorization":`token ${this.token}`,"Accept":"application/vnd.github.v3+json","Content-Type":"application/json"};
-    const r=await this._fetch(url,{method:"PUT",headers:hdrs,body:JSON.stringify(body)});
-    if(r.status===409){
-      const current=await this.read(path);
-      body.sha=current.sha;
-      const r2=await this._fetch(url,{method:"PUT",headers:hdrs,body:JSON.stringify(body)});
-      if(!r2.ok){ const e=await r2.json(); throw new Error(e.message||`GitHub write error ${r2.status}`); }
-      const j2=await r2.json();
-      return j2.content.sha;
-    }
-    if(!r.ok){ const e=await r.json(); throw new Error(e.message||`GitHub write error ${r.status}`); }
-    const j=await r.json();
-    return j.content.sha;
-  }
+// ====== FIREBASE STORAGE ======
+const FB_CFG = {
+  apiKey:            "AIzaSyAlL1uM_2YzRm1QyaJFiyAhjz04xKMkpCk",
+  authDomain:        "presenca-11857.firebaseapp.com",
+  projectId:         "presenca-11857",
+  storageBucket:     "presenca-11857.firebasestorage.app",
+  messagingSenderId: "1042660702835",
+  appId:             "1:1042660702835:web:3c61c2a080fae0c4f50806"
 };
 
-// Fila global de saves — garante que apenas um save roda por vez
-const saveQueue = {
-  _queue: Promise.resolve(),
-  add(fn){ this._queue = this._queue.then(()=>fn()).catch(()=>{}); return this._queue; }
-};
+// SDK do Firebase carregado via CDN no index.html
+// window.firebase estará disponível
+function getDB(){
+  if(window.__FB_DB__) return window.__FB_DB__;
+  const app = window.firebase.initializeApp(FB_CFG);
+  window.__FB_DB__ = window.firebase.firestore(app);
+  return window.__FB_DB__;
+}
 
-// Cache local para operações offline e leitura rápida
+// Cache local (leitura rápida enquanto Firebase carrega)
 const LC = {
   get(key,fb){ try{ const v=localStorage.getItem("cp:"+key); return v?JSON.parse(v):fb; }catch(e){ return fb; } },
   set(key,val){ try{ localStorage.setItem("cp:"+key,JSON.stringify(val)); }catch(e){} },
 };
+
+// ── Leitura ──
+async function fbGet(col){
+  const db = getDB();
+  const snap = await db.collection(col).get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+
+// ── Escrita de um documento ──
+async function fbSet(col, id, data){
+  const db = getDB();
+  await db.collection(col).doc(id).set(data, {merge:true});
+}
+
+// ── Exclusão de um documento ──
+async function fbDel(col, id){
+  const db = getDB();
+  await db.collection(col).doc(id).delete();
+}
+
+// ── Substitui coleção inteira (batch) ──
+async function fbSetAll(col, docs){
+  const db = getDB();
+  const batch = db.batch();
+  // Apaga todos existentes
+  const snap = await db.collection(col).get();
+  snap.docs.forEach(d => batch.delete(d.ref));
+  // Insere novos
+  docs.forEach(d => {
+    const ref = db.collection(col).doc(d.id||String(Date.now()+Math.random()));
+    batch.set(ref, d);
+  });
+  await batch.commit();
+}
+
+// ── Listener realtime ──
+function fbListen(col, callback){
+  const db = getDB();
+  return db.collection(col).onSnapshot(snap=>{
+    callback(snap.docs.map(d=>({id:d.id,...d.data()})));
+  });
+}
 
 // ====== SEED ======
 const SEED_COLABORADORES = [
@@ -194,84 +194,18 @@ const SEED_COLABORADORES = [
   {id:"c30",matricula:"6739733", nome:"Lohan Rodrigues",         funcao:"Op. Loja",    turno:"noite"},
 ];
 
-// ====== TELA DE CONFIGURAÇÃO GITHUB ======
-function TelaConfig({ onConfigurado }){
-  const [owner, setOwner] = useState(GH.owner);
-  const [repo,  setRepo]  = useState(GH.repo);
-  const [token, setToken] = useState(GH.token);
-  const [branch,setBranch]= useState(GH.branch||"main");
-  const [teste,  setTeste] = useState("");
-  const [loading,setLoading]=useState(false);
-
-  const conectar = async () => {
-    if(!owner||!repo||!token){ setTeste("Preencha todos os campos."); return; }
-    setLoading(true); setTeste("Testando conexão…");
-    localStorage.setItem("gh_owner",owner.trim());
-    localStorage.setItem("gh_repo", repo.trim());
-    localStorage.setItem("gh_token",token.trim());
-    localStorage.setItem("gh_branch",branch.trim()||"main");
-    try{
-      const url=`https://api.github.com/repos/${owner.trim()}/${repo.trim()}`;
-      const r=await fetch(url,{headers:{"Authorization":`token ${token.trim()}`}});
-      if(!r.ok) throw new Error("Repositório não encontrado ou token sem permissão.");
-      setTeste("✓ Conectado!");
-      setTimeout(()=>onConfigurado(),800);
-    }catch(e){
-      setTeste("Erro: "+e.message);
-    }
-    setLoading(false);
-  };
-
-  return h("div",{style:S.configScreen},
-    h("div",{style:S.configCard},
-      h("div",{style:{...S.brandMark,margin:"0 auto 16px"}},h(Clock,{size:22,color:"#FAF8F4",strokeWidth:2.2})),
-      h("h1",{style:S.configTitle},"Configurar GitHub"),
-      h("p",{style:S.configSub},
-        "Os dados são salvos em arquivos JSON no seu repositório GitHub. ",
-        "Precisará de um token com permissão ",h("strong",null,"repo"),"."
-      ),
-
-      h("div",{style:S.formGroup},
-        h("label",{style:S.label},"Usuário ou organização"),
-        h("input",{style:S.input,value:owner,onChange:e=>setOwner(e.target.value),placeholder:"ex: digital-kpis"})
-      ),
-      h("div",{style:S.formGroup},
-        h("label",{style:S.label},"Repositório"),
-        h("input",{style:S.input,value:repo,onChange:e=>setRepo(e.target.value),placeholder:"ex: controle-presenca"})
-      ),
-      h("div",{style:S.formGroup},
-        h("label",{style:S.label},"Branch"),
-        h("input",{style:S.input,value:branch,onChange:e=>setBranch(e.target.value),placeholder:"main"})
-      ),
-      h("div",{style:S.formGroup},
-        h("label",{style:S.label},"Token pessoal (classic) — permissão repo"),
-        h("input",{style:S.input,value:token,onChange:e=>setToken(e.target.value),placeholder:"ghp_...",type:"password"}),
-        h("p",{style:{...S.hintText,marginTop:6}},
-          "Crie em: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)"
-        )
-      ),
-
-      teste && h("p",{style:{
-        fontSize:13,fontWeight:600,marginBottom:12,
-        color:teste.startsWith("✓")?"#1A7A4A":"#C0392B"
-      }},teste),
-
-      h("button",{style:{...S.btnPrimary,width:"100%"},onClick:conectar,disabled:loading},
-        loading?"Conectando…":"Conectar ao GitHub"
-      )
-    )
-  );
-}
 
 // ====== APP PRINCIPAL ======
-function ControlePresenca({ onDesconectar }){
+function ControlePresenca(){
   const [pronto,       setPronto]       = useState(false);
   const [salvando,     setSalvando]     = useState(false);
-  const [pendentes,    setPendentes]    = useState(0); // mudanças aguardando save
+  const [online,       setOnline]       = useState(navigator.onLine);
   const [colaboradores,setColaboradores]= useState([]);
   const [presencas,    setPresencas]    = useState({});
   const [tiposStatus,  setTiposStatus]  = useState([]);
   const [bancoHoras,   setBancoHoras]   = useState([]);
+  const [almocos,      setAlmocos]      = useState({});
+  const [almocoData,   setAlmocoData]   = useState(()=>isoDate(new Date()));
   const [tela,         setTela]         = useState("presenca");
   const [turnoAtivo,   setTurnoAtivo]   = useState("manha");
   const [anchorDate,   setAnchorDate]   = useState(()=>new Date());
@@ -283,327 +217,235 @@ function ControlePresenca({ onDesconectar }){
   const [editingLanc,  setEditingLanc]  = useState(null);
   const [bhFiltro,     setBhFiltro]     = useState(null);
   const [showPrint,    setShowPrint]    = useState(false);
-  const [almocos,      setAlmocos]      = useState({});  // { "colabId:isoDate": {saida, retorno} }
-  const [almocoData,   setAlmocoData]   = useState(()=>isoDate(new Date()));
   const [toast,        setToast]        = useState(null);
 
-  // SHAs dos arquivos no GitHub (necessário para atualizar)
-  const shas = useRef({});
-  // Timer para debounce do save de presenças
-  const saveTimer = useRef(null);
-  // Ref que sempre tem o estado mais atual das presenças (evita closure stale)
   const presencasRef = useRef({});
+  const saveTimer    = useRef(null);
 
   const showToast = useCallback((msg,err=false)=>{
     setToast({msg,err}); setTimeout(()=>setToast(null),3000);
   },[]);
 
-  // ---- CARGA INICIAL ----
   useEffect(()=>{
-    async function carregar(){
-      // Carrega do cache local primeiro (instantâneo)
-      const colabsCache  = LC.get("colaboradores", null);
-      const tiposCache   = LC.get("tiposStatus", null);
-      const presencasCache = LC.get("presencas", {});
-      const bhCache      = LC.get("bancoHoras", []);
-
-      if(colabsCache)  setColaboradores(colabsCache);
-      if(tiposCache)   setTiposStatus(tiposCache);
-      setPresencas(presencasCache);
-      setBancoHoras(bhCache);
-      if(colabsCache) setPronto(true); // mostra UI com cache enquanto busca do GitHub
-
-      // Busca dados frescos do GitHub
-      try{
-        // Testa o repositório primeiro
-        const testUrl=`https://api.github.com/repos/${GH.owner}/${GH.repo}`;
-        const testR=await fetch(testUrl,{headers:{"Authorization":`token ${GH.token}`}});
-        if(testR.status===401||testR.status===403) throw new Error("Token inválido ou expirado. Clique em 'Reconfigurar' para atualizar.");
-        if(testR.status===404) throw new Error(`Repositório '${GH.owner}/${GH.repo}' não encontrado. Clique em 'Reconfigurar' para corrigir.`);
-
-        const results = await Promise.all([
-          GH.read("data/colaboradores.json"),
-          GH.read("data/tipos_status.json"),
-          GH.read("data/presencas.json"),
-          GH.read("data/banco_horas.json"),
-          GH.read("data/almocos.json"),
-        ]);
-        const [rc,rt,rp,rb] = results;
-
-        if(rc.data){ shas.current.colaboradores=rc.sha; setColaboradores(rc.data); LC.set("colaboradores",rc.data); }
-        else {
-          // Primeira vez: salva o seed
-          const sha = await GH.write("data/colaboradores.json", SEED_COLABORADORES, null);
-          shas.current.colaboradores = sha;
-          setColaboradores(SEED_COLABORADORES);
-          LC.set("colaboradores", SEED_COLABORADORES);
-        }
-
-        if(rt.data){ shas.current.tiposStatus=rt.sha; setTiposStatus(rt.data); LC.set("tiposStatus",rt.data); }
-        else {
-          const sha = await GH.write("data/tipos_status.json", STATUS_SEED, null);
-          shas.current.tiposStatus = sha;
-          setTiposStatus(STATUS_SEED);
-          LC.set("tiposStatus", STATUS_SEED);
-        }
-
-        if(rp.data){ shas.current.presencas=rp.sha; presencasRef.current=rp.data; setPresencas(rp.data); LC.set("presencas",rp.data); }
-        else { const sha=await GH.write("data/presencas.json",{},null); shas.current.presencas=sha; }
-
-        if(rb.data){ shas.current.bancoHoras=rb.sha; setBancoHoras(rb.data); LC.set("bancoHoras",rb.data); }
-        else { const sha=await GH.write("data/banco_horas.json",[],null); shas.current.bancoHoras=sha; }
-
-        const ra=results[4];
-        if(ra&&ra.data){ shas.current.almocos=ra.sha; setAlmocos(ra.data); LC.set("almocos",ra.data); }
-        else { const sha=await GH.write("data/almocos.json",{},null); shas.current.almocos=sha; }
-
-      }catch(e){
-        showToast("Erro ao carregar do GitHub: "+e.message, true);
-      }
-      setPronto(true);
-    }
-    carregar();
+    const on=()=>setOnline(true), off=()=>setOnline(false);
+    window.addEventListener("online",on); window.addEventListener("offline",off);
+    return()=>{ window.removeEventListener("online",on); window.removeEventListener("offline",off); };
   },[]);
 
-  // ---- SAVE GENÉRICO COM SHA ----
-  const saveGitHub = useCallback((path, data, shaKey)=>{
-    return saveQueue.add(async()=>{
-      setSalvando(true);
-      try{
-        const sha = await GH.write(path, data, shas.current[shaKey]||null);
-        shas.current[shaKey] = sha;
-        LC.set(shaKey, data);
-        return true;
-      }catch(e){
-        showToast("Erro ao salvar: "+e.message, true);
-        return false;
-      }finally{
-        setSalvando(false);
-      }
-    });
-  },[showToast]);
+  useEffect(()=>{
+    const cc=LC.get("colaboradores",null), ct=LC.get("tiposStatus",null);
+    const cp=LC.get("presencas",{}), cb=LC.get("bancoHoras",[]), ca=LC.get("almocos",{});
+    if(cc) setColaboradores(cc);
+    if(ct) setTiposStatus(ct);
+    presencasRef.current=cp; setPresencas(cp);
+    setBancoHoras(cb); setAlmocos(ca);
 
-  // ---- PRESENÇA: save em lote com debounce de 2s — agrupa cliques rápidos ----
+    const unsubs=[];
+
+    unsubs.push(fbListen("colaboradores", docs=>{
+      if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
+      const sorted=docs.sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+      setColaboradores(sorted); LC.set("colaboradores",sorted);
+      setPronto(true);
+    }));
+
+    unsubs.push(fbListen("tiposStatus", docs=>{
+      if(docs.length===0){ STATUS_SEED.forEach((t,i)=>fbSet("tiposStatus",t.id,{...t,ordem:i})); return; }
+      const sorted=docs.sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+      setTiposStatus(sorted); LC.set("tiposStatus",sorted);
+    }));
+
+    fbGet("presencas").then(docs=>{
+      const map={};
+      docs.forEach(d=>{ if(d.data) Object.assign(map,d.data); });
+      presencasRef.current=map; setPresencas({...map}); LC.set("presencas",map);
+    });
+
+    unsubs.push(fbListen("bancoHoras", docs=>{
+      const sorted=docs.sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+      setBancoHoras(sorted); LC.set("bancoHoras",sorted);
+    }));
+
+    fbGet("almocos").then(docs=>{
+      const map={};
+      docs.forEach(d=>{ if(d.data) Object.assign(map,d.data); });
+      setAlmocos(map); LC.set("almocos",map);
+    });
+
+    return()=>unsubs.forEach(u=>u());
+  },[]);
+
   const flushPresencas = useCallback(()=>{
     clearTimeout(saveTimer.current);
-    setPendentes(p=>p+1);
-    saveTimer.current = setTimeout(()=>{
-      const snapshot = presencasRef.current;
-      saveQueue.add(async()=>{
-        setSalvando(true);
-        try{
-          const sha = await GH.write("data/presencas.json", snapshot, shas.current.presencas||null);
-          shas.current.presencas = sha;
-          LC.set("presencas", snapshot);
-          setPendentes(0);
-          showToast("Salvo ✓");
-        }catch(e){
-          showToast("Erro ao salvar: "+e.message, true);
-          setPendentes(0);
-        }finally{
-          setSalvando(false);
-        }
-      });
-    }, 2000);
+    saveTimer.current=setTimeout(async()=>{
+      const snap=presencasRef.current;
+      setSalvando(true);
+      try{
+        await fbSet("presencas","mapa",{data:snap});
+        LC.set("presencas",snap);
+        showToast("Salvo ✓");
+      }catch(e){ showToast("Erro ao salvar: "+e.message,true); }
+      finally{ setSalvando(false); }
+    },1500);
   },[showToast]);
 
-  const cycleStatus = useCallback((colabId, dateIso)=>{
+  const cycleStatus=useCallback((colabId,dateIso)=>{
     const key=`${colabId}:${dateIso}`;
     setPresencas(prev=>{
-      const current = prev[key]||"vazio";
-      const ids = ["vazio",...tiposStatus.map(t=>t.id)];
-      const next = ids[(ids.indexOf(current)+1)%ids.length];
-      const next_map = {...prev};
-      if(next==="vazio") delete next_map[key]; else next_map[key]=next;
-      // Atualiza a ref ANTES de agendar o save — garante que o timer sempre usa o estado mais atual
-      presencasRef.current = next_map;
+      const current=prev[key]||"vazio";
+      const ids=["vazio",...tiposStatus.map(t=>t.id)];
+      const next=ids[(ids.indexOf(current)+1)%ids.length];
+      const nm={...prev};
+      if(next==="vazio") delete nm[key]; else nm[key]=next;
+      presencasRef.current=nm;
       flushPresencas();
-      return next_map;
+      return nm;
     });
-  },[tiposStatus, flushPresencas]);
+  },[tiposStatus,flushPresencas]);
 
-  // ---- COLABORADORES ----
-  // Gera datas de folga para ±1 ano a partir de hoje no dia da semana escolhido
-  const gerarFolgas = useCallback((colabId, diaSemana, presencasAtual) => {
-    if(diaSemana === null || diaSemana === undefined) return presencasAtual;
-    const idFolga = tiposStatus.find(t=>t.id==="folga")?.id || "folga";
-    const next = {...presencasAtual};
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    // Encontra o primeiro dia da semana escolhido a partir de 1 ano atrás
-    // Gera folgas para 4 semanas passadas + 12 semanas futuras (~4 meses)
-    const inicio = new Date(hoje); inicio.setDate(inicio.getDate()-28);
-    const fim    = new Date(hoje); fim.setDate(fim.getDate()+84);
-    // Avança até o primeiro dia correto
-    while(inicio.getDay() !== diaSemana) inicio.setDate(inicio.getDate()+1);
-    // Preenche semana a semana
-    const d = new Date(inicio);
-    while(d <= fim){
-      next[`${colabId}:${isoDate(d)}`] = idFolga;
-      d.setDate(d.getDate()+7);
-    }
+  const gerarFolgas=useCallback((colabId,diaSemana,presencasAtual)=>{
+    if(diaSemana===null||diaSemana===undefined) return presencasAtual;
+    const idFolga=tiposStatus.find(t=>t.id==="folga")?.id||"folga";
+    const next={...presencasAtual};
+    const hoje=new Date(); hoje.setHours(0,0,0,0);
+    const inicio=new Date(hoje); inicio.setFullYear(inicio.getFullYear()-1);
+    const fim=new Date(hoje); fim.setFullYear(fim.getFullYear()+1);
+    while(inicio.getDay()!==diaSemana) inicio.setDate(inicio.getDate()+1);
+    const d=new Date(inicio);
+    while(d<=fim){ next[`${colabId}:${isoDate(d)}`]=idFolga; d.setDate(d.getDate()+7); }
     return next;
   },[tiposStatus]);
 
-  const handleSaveColab = useCallback(async colab=>{
-    const isNovo = !colab.id || !colaboradores.some(c=>c.id===colab.id);
-    const colabId = colab.id || `c${Date.now()}`;
-    const colabFinal = {...colab, id:colabId};
-
-    let nextColabs;
-    if(isNovo){
-      nextColabs = [...colaboradores, colabFinal]
-        .sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
-    } else {
-      nextColabs = colaboradores.map(c=>c.id===colabId?{...c,...colabFinal}:c);
-    }
-    setColaboradores(nextColabs);
-    await saveGitHub("data/colaboradores.json", nextColabs, "colaboradores");
-
-    // Gera folgas automáticas se um dia de folga foi definido
-    if(colabFinal.diaFolga !== null && colabFinal.diaFolga !== undefined){
-      // Se editou e mudou o dia, limpa folgas antigas antes
-      let base = {...presencas};
-      if(!isNovo){
-        const colabAntigo = colaboradores.find(c=>c.id===colabId);
-        if(colabAntigo?.diaFolga !== colabFinal.diaFolga){
-          // Remove todas as folgas antigas desse colaborador
-          const idFolga = tiposStatus.find(t=>t.id==="folga")?.id || "folga";
-          Object.keys(base).forEach(k=>{
-            if(k.startsWith(colabId+":") && base[k]===idFolga) delete base[k];
-          });
-        }
-      }
-      const nextPresencas = gerarFolgas(colabId, colabFinal.diaFolga, base);
-      setPresencas(nextPresencas);
-      await saveGitHub("data/presencas.json", nextPresencas, "presencas");
-      showToast(isNovo?"Colaborador cadastrado com folgas semanais":"Colaborador atualizado — folgas reorganizadas");
-    } else {
-      showToast(isNovo?"Colaborador cadastrado":"Colaborador atualizado");
-    }
-
-    setShowCadastro(false); setEditingColab(null);
-  },[colaboradores,presencas,tiposStatus,saveGitHub,gerarFolgas,showToast]);
-
-  const handleDeleteColab = useCallback(async id=>{
-    const next = colaboradores.filter(c=>c.id!==id);
-    setColaboradores(next);
-    const nextP = {...presencas};
-    Object.keys(nextP).forEach(k=>{ if(k.startsWith(id+":")) delete nextP[k]; });
-    setPresencas(nextP);
-    await saveGitHub("data/colaboradores.json", next, "colaboradores");
-    await saveGitHub("data/presencas.json", nextP, "presencas");
-    showToast("Colaborador removido");
-    setConfirmDelColab(null);
-  },[colaboradores,presencas,saveGitHub,showToast]);
-
-  // ---- TIPOS STATUS ----
-  const handleSaveTipo = useCallback(async tipo=>{
-    let next;
-    if(tipo.id && tiposStatus.some(t=>t.id===tipo.id)){
-      next = tiposStatus.map(t=>t.id===tipo.id?{...t,...tipo}:t);
-    } else {
-      next = [...tiposStatus,{...tipo,id:`t${Date.now()}`}];
-    }
-    setTiposStatus(next);
-    await saveGitHub("data/tipos_status.json", next, "tiposStatus");
-    showToast("Tipo salvo");
-  },[tiposStatus,saveGitHub,showToast]);
-
-  const handleDeleteTipo = useCallback(async id=>{
-    const next = tiposStatus.filter(t=>t.id!==id);
-    setTiposStatus(next);
-    const nextP = {...presencas};
-    Object.keys(nextP).forEach(k=>{ if(nextP[k]===id) delete nextP[k]; });
-    setPresencas(nextP);
-    await saveGitHub("data/tipos_status.json", next, "tiposStatus");
-    await saveGitHub("data/presencas.json", nextP, "presencas");
-    showToast("Tipo removido");
-  },[tiposStatus,presencas,saveGitHub,showToast]);
-
-  // ---- BANCO DE HORAS ----
-  const handleSaveLanc = useCallback(async lanc=>{
-    let next;
-    if(lanc.id && bancoHoras.some(b=>b.id===lanc.id)){
-      next = bancoHoras.map(b=>b.id===lanc.id?{...b,...lanc}:b);
-    } else {
-      next = [{...lanc,id:`bh${Date.now()}`},...bancoHoras];
-    }
-    setBancoHoras(next);
-    await saveGitHub("data/banco_horas.json", next, "bancoHoras");
-    showToast("Horas salvas");
-    setShowLanc(false); setEditingLanc(null);
-  },[bancoHoras,saveGitHub,showToast]);
-
-  const handleDeleteLanc = useCallback(async id=>{
-    const next = bancoHoras.filter(b=>b.id!==id);
-    setBancoHoras(next);
-    await saveGitHub("data/banco_horas.json", next, "bancoHoras");
-    showToast("Lançamento removido");
-  },[bancoHoras,saveGitHub,showToast]);
-
-  // ---- ALMOÇO ----
-  const handleSaveAlmoco = useCallback(async(colabId, data, saida, retorno)=>{
-    const key = `${colabId}:${data}`;
-    const next = {...almocos};
-    if(!saida && !retorno) delete next[key];
-    else next[key] = {saida, retorno};
-    setAlmocos(next);
-    await saveGitHub("data/almocos.json", next, "almocos");
-  },[almocos, saveGitHub]);
-
-  // Sync manual — puxa dados frescos do GitHub (404 = arquivo ainda não existe, tudo bem)
-  const sincronizar = useCallback(async()=>{
+  const handleSaveColab=useCallback(async colab=>{
+    const isNovo=!colab.id||!colaboradores.some(c=>c.id===colab.id);
+    const colabId=colab.id||`c${Date.now()}`;
+    const colabFinal={...colab,id:colabId};
     setSalvando(true);
     try{
-      // Lê cada arquivo individualmente para que 404 em um não derrube os outros
-      const ler = async(path) => { try{ return await GH.read(path); }catch(e){ return {data:null,sha:null}; } };
-      const [rc,rt,rp,rb] = await Promise.all([
-        ler("data/colaboradores.json"),
-        ler("data/tipos_status.json"),
-        ler("data/presencas.json"),
-        ler("data/banco_horas.json"),
-      ]);
-      if(rc.data){ shas.current.colaboradores=rc.sha; setColaboradores(rc.data); LC.set("colaboradores",rc.data); }
-      if(rt.data){ shas.current.tiposStatus=rt.sha; setTiposStatus(rt.data); LC.set("tiposStatus",rt.data); }
-      if(rp.data){ shas.current.presencas=rp.sha; presencasRef.current=rp.data; setPresencas(rp.data); LC.set("presencas",rp.data); }
-      if(rb.data){ shas.current.bancoHoras=rb.sha; setBancoHoras(rb.data); LC.set("bancoHoras",rb.data); }
-      showToast("Sincronizado ✓");
-    }catch(e){
-      showToast("Erro ao sincronizar: "+e.message, true);
-    }
-    setSalvando(false);
+      await fbSet("colaboradores",colabId,colabFinal);
+      if(colabFinal.diaFolga!==null&&colabFinal.diaFolga!==undefined){
+        let base={...presencasRef.current};
+        if(!isNovo){
+          const ant=colaboradores.find(c=>c.id===colabId);
+          if(ant?.diaFolga!==colabFinal.diaFolga){
+            const idF=tiposStatus.find(t=>t.id==="folga")?.id||"folga";
+            Object.keys(base).forEach(k=>{ if(k.startsWith(colabId+":")&&base[k]===idF) delete base[k]; });
+          }
+        }
+        const np=gerarFolgas(colabId,colabFinal.diaFolga,base);
+        presencasRef.current=np; setPresencas({...np});
+        await fbSet("presencas","mapa",{data:np});
+        LC.set("presencas",np);
+      }
+      showToast(isNovo?"Colaborador cadastrado":"Colaborador atualizado");
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+    setShowCadastro(false); setEditingColab(null);
+  },[colaboradores,tiposStatus,gerarFolgas,showToast]);
+
+  const handleDeleteColab=useCallback(async id=>{
+    setSalvando(true);
+    try{
+      await fbDel("colaboradores",id);
+      const np={...presencasRef.current};
+      Object.keys(np).forEach(k=>{ if(k.startsWith(id+":")) delete np[k]; });
+      presencasRef.current=np; setPresencas({...np});
+      await fbSet("presencas","mapa",{data:np});
+      LC.set("presencas",np);
+      showToast("Colaborador removido");
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+    setConfirmDelColab(null);
   },[showToast]);
 
-  const getStatusInfo = useCallback(id=>{
+  const handleSaveTipo=useCallback(async tipo=>{
+    const id=tipo.id||`t${Date.now()}`;
+    setSalvando(true);
+    try{ await fbSet("tiposStatus",id,{...tipo,id}); showToast("Tipo salvo"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleDeleteTipo=useCallback(async id=>{
+    setSalvando(true);
+    try{
+      await fbDel("tiposStatus",id);
+      const np={...presencasRef.current};
+      Object.keys(np).forEach(k=>{ if(np[k]===id) delete np[k]; });
+      presencasRef.current=np; setPresencas({...np});
+      await fbSet("presencas","mapa",{data:np});
+      showToast("Tipo removido");
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleSaveLanc=useCallback(async lanc=>{
+    const id=lanc.id||`bh${Date.now()}`;
+    setSalvando(true);
+    try{ await fbSet("bancoHoras",id,{...lanc,id}); showToast("Horas salvas"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+    setShowLanc(false); setEditingLanc(null);
+  },[showToast]);
+
+  const handleDeleteLanc=useCallback(async id=>{
+    setSalvando(true);
+    try{ await fbDel("bancoHoras",id); showToast("Lançamento removido"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleSaveAlmoco=useCallback(async(colabId,data,saida,retorno)=>{
+    const key=`${colabId}:${data}`;
+    const next={...almocos};
+    if(!saida&&!retorno) delete next[key]; else next[key]={saida,retorno};
+    setAlmocos(next);
+    setSalvando(true);
+    try{ await fbSet("almocos","mapa",{data:next}); LC.set("almocos",next); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[almocos,showToast]);
+
+  const sincronizar=useCallback(async()=>{
+    setSalvando(true);
+    try{
+      const docs=await fbGet("presencas");
+      const map={};
+      docs.forEach(d=>{ if(d.data) Object.assign(map,d.data); });
+      presencasRef.current=map; setPresencas({...map}); LC.set("presencas",map);
+      showToast("Sincronizado ✓");
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const getStatusInfo=useCallback(id=>{
     if(!id||id==="vazio") return STATUS_VAZIO;
     return tiposStatus.find(t=>t.id===id)||STATUS_VAZIO;
   },[tiposStatus]);
 
-  const saldosPorColab = useMemo(()=>{
+  const saldosPorColab=useMemo(()=>{
     const m={}; bancoHoras.forEach(b=>{ m[b.colab_id]=(m[b.colab_id]||0)+b.minutos; }); return m;
   },[bancoHoras]);
 
-  const weekDays = useMemo(()=>getWeekDays(anchorDate),[anchorDate]);
-  const isVisaoTodos = turnoAtivo==="todos";
-  const colaboradoresDoTurno = useMemo(()=>
+  const weekDays=useMemo(()=>getWeekDays(anchorDate),[anchorDate]);
+  const isVisaoTodos=turnoAtivo==="todos";
+  const colaboradoresDoTurno=useMemo(()=>
     colaboradores.filter(c=>c.turno===turnoAtivo).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR")),
     [colaboradores,turnoAtivo]
   );
-  const gruposPorTurno = useMemo(()=>
+  const gruposPorTurno=useMemo(()=>
     TURNOS.map(t=>({turno:t,items:colaboradores.filter(c=>c.turno===t.id).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"))})).filter(g=>g.items.length>0),
     [colaboradores]
   );
 
   if(!pronto) return h("div",{style:S.loadingScreen},
     h("div",{style:S.loadingDot}),
-    h("p",{style:{color:"#9C9586",fontSize:13,marginTop:14}},"Carregando do GitHub…")
+    h("p",{style:{color:"#C9BC9A",fontSize:13,marginTop:14}},"Conectando ao Firebase…")
   );
 
-  const turnoInfo = isVisaoTodos?VISAO_TODOS:TURNOS.find(t=>t.id===turnoAtivo);
+  const turnoInfo=isVisaoTodos?VISAO_TODOS:TURNOS.find(t=>t.id===turnoAtivo);
 
   return h("div",{style:S.app},
-
-    // HEADER
     h("header",{style:S.header},
       h("div",{style:S.headerTop},
         h("div",{style:S.brandRow},
@@ -614,39 +456,26 @@ function ControlePresenca({ onDesconectar }){
           )
         ),
         h("div",{style:{display:"flex",alignItems:"center",gap:6}},
-          // Indicador de pendentes / salvando
-          pendentes>0&&!salvando&&h("span",{style:S.pendenteBadge},`${pendentes} ✎`),
           salvando&&h("span",{style:S.salvandoBadge},"Salvando…"),
-          h("button",{style:S.iconBtn2,onClick:sincronizar,title:"Sincronizar com GitHub"},
-            h(RefreshCw,{size:16,color:"#C9BC9A",strokeWidth:2.2})
-          ),
-          h("button",{style:{...S.iconBtn2},onClick:()=>setShowPrint(true),title:"Imprimir escala da semana"},
-            h(Printer,{size:16,color:"#C9BC9A",strokeWidth:2.2})
-          ),
-          h("button",{style:{...S.iconBtn2,fontSize:10,fontWeight:700,color:"#9C9586",padding:"0 8px",width:"auto"},
-            onClick:onDesconectar,title:"Reconfigurar GitHub"},
-            "⚙ Config"
-          ),
+          h("div",{style:{width:8,height:8,borderRadius:"50%",background:online?"#22C55E":"#EF4444",flexShrink:0},title:online?"Online":"Offline"}),
+          h("button",{style:S.iconBtn2,onClick:sincronizar,title:"Sincronizar"},h(RefreshCw,{size:16,color:"#C9BC9A",strokeWidth:2.2})),
+          h("button",{style:S.iconBtn2,onClick:()=>setShowPrint(true),title:"Imprimir"},h(Printer,{size:16,color:"#C9BC9A",strokeWidth:2.2})),
           h("button",{style:S.addBtn,onClick:()=>{setEditingColab(null);setShowCadastro(true);}},
             h(UserPlus,{size:15,strokeWidth:2.2}),h("span",null,"Cadastrar")
           )
         )
       ),
-
-      // Nav principal
       h("div",{style:S.navTabs},
         h("button",{style:{...S.navTab,...(tela==="presenca"?S.navTabAtivo:{})},onClick:()=>setTela("presenca")},
-          h(CalendarDays,{size:14,color:tela==="presenca"?"#2B2620":"#9C9586",strokeWidth:2.2}),h("span",null,"Escala")
+          h(CalendarDays,{size:14,color:tela==="presenca"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Escala")
         ),
         h("button",{style:{...S.navTab,...(tela==="bancohoras"?S.navTabAtivo:{})},onClick:()=>setTela("bancohoras")},
-          h(TrendingUp,{size:14,color:tela==="bancohoras"?"#2B2620":"#9C9586",strokeWidth:2.2}),h("span",null,"Banco de Horas")
+          h(TrendingUp,{size:14,color:tela==="bancohoras"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Banco de Horas")
         ),
         h("button",{style:{...S.navTab,...(tela==="almoco"?S.navTabAtivo:{})},onClick:()=>setTela("almoco")},
-          h(UtensilsCrossed,{size:14,color:tela==="almoco"?"#2B2620":"#9C9586",strokeWidth:2.2}),h("span",null,"Almoço")
+          h(UtensilsCrossed,{size:14,color:tela==="almoco"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Almoço")
         )
       ),
-
-      // Sub-abas de turno (só na escala)
       tela==="presenca"&&h("div",{style:S.tabsRow},
         h("button",{onClick:()=>setTurnoAtivo("todos"),style:{...S.tab,...(isVisaoTodos?{...S.tabActive,borderColor:VISAO_TODOS.cor}:{})}},
           h(Users,{size:12,color:isVisaoTodos?VISAO_TODOS.cor:"#9C9586",strokeWidth:2.4}),
@@ -666,12 +495,8 @@ function ControlePresenca({ onDesconectar }){
       )
     ),
 
-    // TELA ESCALA
     tela==="presenca"&&h("div",null,
-      h(ResumoDia,{
-        colaboradores, presencas, tiposStatus,
-        dataRef: isoDate(new Date()),
-      }),
+      h(ResumoDia,{colaboradores,presencas,tiposStatus,dataRef:isoDate(new Date())}),
       h("div",{style:S.subbar},
         h("div",{style:S.turnoChip},
           h("span",{style:{...S.turnoChipDot,background:turnoInfo.cor}}),
@@ -685,7 +510,6 @@ function ControlePresenca({ onDesconectar }){
           h("button",{style:S.weekTodayBtn,onClick:()=>setAnchorDate(new Date())},"Hoje")
         )
       ),
-
       h("div",{style:S.legend},
         ...tiposStatus.map(s=>h("div",{key:s.id,style:S.legendItem},
           h("span",{style:{...S.legendSwatch,background:s.bg,borderColor:s.color}},
@@ -697,7 +521,6 @@ function ControlePresenca({ onDesconectar }){
           h(Settings,{size:12,strokeWidth:2.4}),h("span",null,"Gerenciar tipos")
         )
       ),
-
       h("main",{style:S.tableWrap},
         (isVisaoTodos?colaboradores.length===0:colaboradoresDoTurno.length===0)?
           h("div",{style:S.emptyState},
@@ -737,22 +560,13 @@ function ControlePresenca({ onDesconectar }){
       )
     ),
 
-    // TELA BANCO DE HORAS
-    tela==="bancohoras"&&h(TelaBancoHoras,{
-      colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
+    tela==="bancohoras"&&h(TelaBancoHoras,{colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
       onNovo:()=>{setEditingLanc(null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
     }),
+    tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
-    // TELA ALMOÇO
-    tela==="almoco"&&h(TelaAlmoco,{
-      colaboradores, presencas, almocos, almocoData,
-      setAlmocoData, onSave:handleSaveAlmoco,
-      tiposStatus,
-    }),
-
-    // MODAIS
     showCadastro&&h(CadastroModal,{initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
     showTipos&&h(TiposModal,{tipos:tiposStatus,onClose:()=>setShowTipos(false),onSave:handleSaveTipo,onDelete:handleDeleteTipo}),
     showLanc&&h(LancamentoModal,{initial:editingLanc,colaboradores,onClose:()=>{setShowLanc(false);setEditingLanc(null);},onSave:handleSaveLanc}),
@@ -766,11 +580,8 @@ function ControlePresenca({ onDesconectar }){
         )
       )
     ),
-    toast&&h("div",{style:{...S.toast,background:toast.err?"#C0392B":"#2B2620"}},toast.msg),
-    showPrint&&h(PrintModal,{
-      colaboradores, presencas, tiposStatus, weekDays,
-      onClose:()=>setShowPrint(false),
-    })
+    showPrint&&h(PrintModal,{colaboradores,presencas,tiposStatus,weekDays,onClose:()=>setShowPrint(false)}),
+    toast&&h("div",{style:{...S.toast,background:toast.err?"#D32F2F":"#1A1208"}},toast.msg)
   );
 }
 
@@ -1578,12 +1389,7 @@ ${(()=>{
 
 // ====== ROOT ======
 function Root(){
-  const [configurado,setConfigurado]=useState(GH.configured());
-  if(!configurado) return h(TelaConfig,{onConfigurado:()=>setConfigurado(true)});
-  return h(ControlePresenca,{onDesconectar:()=>{
-    ["gh_owner","gh_repo","gh_token","gh_branch"].forEach(k=>localStorage.removeItem(k));
-    setConfigurado(false);
-  }});
+  return h(ControlePresenca, null);
 }
 
 // ====== ESTILOS ======
