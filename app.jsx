@@ -220,6 +220,7 @@ function ControlePresenca(){
   const [toast,        setToast]        = useState(null);
 
   const presencasRef = useRef({});
+  const [modalStatus, setModalStatus] = useState(null); // {colabId, dateIso, nome}
   const saveTimer    = useRef(null);
 
   const showToast = useCallback((msg,err=false)=>{
@@ -289,19 +290,21 @@ function ControlePresenca(){
     },1500);
   },[showToast]);
 
-  const cycleStatus=useCallback((colabId,dateIso)=>{
+  const setStatus=useCallback((colabId,dateIso,next)=>{
     const key=`${colabId}:${dateIso}`;
     setPresencas(prev=>{
-      const current=prev[key]||"vazio";
-      const ids=["vazio",...tiposStatus.map(t=>t.id)];
-      const next=ids[(ids.indexOf(current)+1)%ids.length];
       const nm={...prev};
-      if(next==="vazio") delete nm[key]; else nm[key]=next;
+      if(!next||next==="vazio") delete nm[key]; else nm[key]=next;
       presencasRef.current=nm;
       flushPresencas();
       return nm;
     });
-  },[tiposStatus,flushPresencas]);
+    setModalStatus(null);
+  },[flushPresencas]);
+
+  const openModalStatus=useCallback((colabId,dateIso,nome)=>{
+    setModalStatus({colabId,dateIso,nome});
+  },[]);
 
   const gerarFolgas=useCallback((colabId,diaSemana,presencasAtual)=>{
     if(diaSemana===null||diaSemana===undefined) return presencasAtual;
@@ -550,10 +553,10 @@ function ControlePresenca(){
                     h("span",{style:S.groupHeaderHorario},grupo.turno.horario),
                     h("span",{style:S.groupHeaderCount},`${grupo.items.length} pessoas`)
                   )),
-                  ...grupo.items.map((c,i)=>rowColab(c,i,weekDays,presencas,cycleStatus,
+                  ...grupo.items.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
                     ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo))
                 )):
-                h("tbody",null,...colaboradoresDoTurno.map((c,i)=>rowColab(c,i,weekDays,presencas,cycleStatus,
+                h("tbody",null,...colaboradoresDoTurno.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
                   ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo)))
             )
           )
@@ -580,8 +583,120 @@ function ControlePresenca(){
         )
       )
     ),
+    modalStatus&&h(ModalStatus,{
+      colabId:modalStatus.colabId,
+      dateIso:modalStatus.dateIso,
+      nome:modalStatus.nome,
+      statusAtual:presencas[`${modalStatus.colabId}:${modalStatus.dateIso}`]||"vazio",
+      tiposStatus,
+      onSelect:setStatus,
+      onClose:()=>setModalStatus(null),
+    }),
     showPrint&&h(PrintModal,{colaboradores,presencas,tiposStatus,weekDays,onClose:()=>setShowPrint(false)}),
     toast&&h("div",{style:{...S.toast,background:toast.err?"#D32F2F":"#1A1208"}},toast.msg)
+  );
+}
+
+// ====== MODAL DE SELEÇÃO DE STATUS ======
+function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelect, onClose }) {
+  const dataFmt = dateIso.split("-").reverse().join("/");
+  const WEEKDAY = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  const dia = WEEKDAY[new Date(dateIso+"T12:00:00").getDay()];
+
+  return h("div", { style:{ ...S.modalOverlay, alignItems:"center" }, onClick:onClose },
+    h("div", {
+      style:{
+        background:"#FAF8F4",
+        borderRadius:18,
+        padding:"20px 16px 24px",
+        width:"92%", maxWidth:380,
+        animation:"fadeIn 0.18s ease-out",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.4)",
+      },
+      onClick:e=>e.stopPropagation()
+    },
+
+      // Cabeçalho
+      h("div",{style:{marginBottom:16}},
+        h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
+          h("p",{style:{fontSize:11,fontWeight:700,color:"#9C9586",textTransform:"uppercase",letterSpacing:"0.05em",margin:0}},
+            `${dia}, ${dataFmt}`
+          ),
+          h("button",{style:{border:"none",background:"#EFEBE2",borderRadius:8,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"},onClick:onClose},
+            h(X,{size:16,color:"#5C5648"})
+          )
+        ),
+        h("p",{style:{fontSize:15,fontWeight:800,color:"#1A1208",margin:0}},nome)
+      ),
+
+      // Opções de status
+      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+
+        // Botão limpar (só aparece se tiver algo marcado)
+        statusAtual!=="vazio" && h("button",{
+          onClick:()=>onSelect(colabId,dateIso,"vazio"),
+          style:{
+            display:"flex",alignItems:"center",gap:12,
+            padding:"11px 14px",borderRadius:12,
+            border:"1.5px dashed #D8CDB8",
+            background:"#FAFAF8",cursor:"pointer",
+          }
+        },
+          h("div",{style:{
+            width:40,height:40,borderRadius:10,
+            background:"#F4F1EA",border:"1.5px solid #D8CDB8",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:18,
+          }},"✕"),
+          h("div",null,
+            h("div",{style:{fontSize:13.5,fontWeight:700,color:"#5C5648"}}, "Limpar marcação"),
+            h("div",{style:{fontSize:11,color:"#9C9586",marginTop:1}}, "Remove o status deste dia")
+          )
+        ),
+
+        // Tipos de status
+        ...tiposStatus.map(t => {
+          const ativo = statusAtual === t.id;
+          return h("button",{
+            key:t.id,
+            onClick:()=>onSelect(colabId,dateIso,t.id),
+            style:{
+              display:"flex",alignItems:"center",gap:12,
+              padding:"11px 14px",borderRadius:12,
+              border: ativo?`2px solid ${t.color}`:"1.5px solid #EFEBE2",
+              background: ativo?t.bg:"#FFFFFF",
+              cursor:"pointer",
+              boxShadow: ativo?`0 2px 12px ${t.color}44`:"none",
+              transform: ativo?"scale(1.01)":"scale(1)",
+              transition:"all 0.1s",
+            }
+          },
+            // Badge
+            h("div",{style:{
+              width:40,height:40,borderRadius:10,flexShrink:0,
+              background:ativo?t.color:t.bg,
+              border:`2px solid ${t.color}`,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:13,fontWeight:900,
+              color:ativo?"#FFF":t.color,
+              letterSpacing:"-0.5px",
+              boxShadow:ativo?`0 2px 8px ${t.color}66`:"none",
+            }},t.short),
+            // Info
+            h("div",{style:{flex:1}},
+              h("div",{style:{fontSize:13.5,fontWeight:ativo?800:600,color:ativo?t.color:"#1A1208"}},t.label),
+              ativo && h("div",{style:{fontSize:11,color:t.color,marginTop:1,fontWeight:600}},"✓ Selecionado")
+            ),
+            // Indicador ativo
+            ativo && h("div",{style:{
+              width:10,height:10,borderRadius:"50%",
+              background:t.color,flexShrink:0,
+              boxShadow:`0 0 6px ${t.color}`,
+            }})
+          );
+        })
+      )
+    )
   );
 }
 
@@ -606,17 +721,21 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
       const isToday=dateIso===isoDate(new Date()),marcado=status!=="vazio";
       return h("td",{key,style:S.tdCell},
         h("button",{
-          onClick:()=>onCycle(colab.id,dateIso),
+          onClick:()=>onCycle(colab.id,dateIso,colab.nome),
+          title: marcado?s.label:"Clique para marcar",
           style:{
             ...S.cellBtn,
             background: isToday&&!marcado?"#FEF9F0":marcado?s.color:"#FFFFFF",
-            borderColor: isToday?"#2B2620":marcado?s.color:"#E8E3D8",
+            borderColor: isToday?"#E65100":marcado?s.color:"#E8E3D8",
             borderWidth: isToday||marcado?2:1,
-            color: marcado?"#FFFFFF":s.color,
+            color: marcado?"#FFFFFF":isToday?"#E65100":"#BDC3C7",
             fontWeight: marcado?900:600,
-            boxShadow: marcado?`0 2px 6px ${s.color}55`:"none",
+            boxShadow: marcado?`0 2px 8px ${s.color}66`:"none",
+            position:"relative",
           }
-        },s.short)
+        },
+          marcado ? s.short : h("span",{style:{fontSize:16,opacity:.3}},"+")
+        )
       );
     })
   );
