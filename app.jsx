@@ -93,22 +93,24 @@ function fmtSaldo(min){
 function horaParaMin(str){ const [hh,mm]=(str||"00:00").split(":").map(Number); return (hh||0)*60+(mm||0); }
 function minParaHora(min){ const abs=Math.abs(min); return `${pad2(Math.floor(abs/60))}:${pad2(abs%60)}`; }
 
-// ====== FIREBASE STORAGE ======
+// ====== FIREBASE STORAGE (banco compartilhado do PAINEL: escala-dinamica) ======
 const FB_CFG = {
-  apiKey:            "AIzaSyAlL1uM_2YzRm1QyaJFiyAhjz04xKMkpCk",
-  authDomain:        "presenca-11857.firebaseapp.com",
-  projectId:         "presenca-11857",
-  storageBucket:     "presenca-11857.firebasestorage.app",
-  messagingSenderId: "1042660702835",
-  appId:             "1:1042660702835:web:3c61c2a080fae0c4f50806"
+  apiKey:            "AIzaSyD2qYaUrjyFoJgfNLRTBg-b2t9Yr9GSB3A",
+  authDomain:        "escala-dinamica.firebaseapp.com",
+  databaseURL:       "https://escala-dinamica-default-rtdb.firebaseio.com",
+  projectId:         "escala-dinamica",
+  storageBucket:     "escala-dinamica.firebasestorage.app",
+  messagingSenderId: "896362898729",
+  appId:             "1:896362898729:web:443ef1f568fc709bf3c338"
 };
+const FB_PATH = "controle_presenca";
 
 // SDK do Firebase carregado via CDN no index.html
 // window.firebase estará disponível
 function getDB(){
   if(window.__FB_DB__) return window.__FB_DB__;
   const app = window.firebase.initializeApp(FB_CFG);
-  window.__FB_DB__ = window.firebase.firestore(app);
+  window.__FB_DB__ = window.firebase.database(app);
   return window.__FB_DB__;
 }
 
@@ -121,43 +123,46 @@ const LC = {
 // ── Leitura ──
 async function fbGet(col){
   const db = getDB();
-  const snap = await db.collection(col).get();
-  return snap.docs.map(d=>({id:d.id,...d.data()}));
+  const snap = await db.ref(FB_PATH+"/"+col).once("value");
+  const val = snap.val() || {};
+  return Object.keys(val).map(id=>({id, ...val[id]}));
 }
 
-// ── Escrita de um documento ──
+// ── Escrita de um documento (merge raso, igual ao merge:true do Firestore) ──
 async function fbSet(col, id, data){
   const db = getDB();
-  await db.collection(col).doc(id).set(data, {merge:true});
+  await db.ref(FB_PATH+"/"+col+"/"+id).update(data);
 }
 
 // ── Exclusão de um documento ──
 async function fbDel(col, id){
   const db = getDB();
-  await db.collection(col).doc(id).delete();
+  await db.ref(FB_PATH+"/"+col+"/"+id).remove();
 }
 
-// ── Substitui coleção inteira (batch) ──
+// ── Substitui coleção inteira ──
 async function fbSetAll(col, docs){
   const db = getDB();
-  const batch = db.batch();
-  // Apaga todos existentes
-  const snap = await db.collection(col).get();
-  snap.docs.forEach(d => batch.delete(d.ref));
-  // Insere novos
+  const obj = {};
   docs.forEach(d => {
-    const ref = db.collection(col).doc(d.id||String(Date.now()+Math.random()));
-    batch.set(ref, d);
+    const id = d.id || String(Date.now()+Math.random());
+    const rest = {...d};
+    delete rest.id;
+    obj[id] = rest;
   });
-  await batch.commit();
+  await db.ref(FB_PATH+"/"+col).set(obj);
 }
 
 // ── Listener realtime ──
 function fbListen(col, callback){
   const db = getDB();
-  return db.collection(col).onSnapshot(snap=>{
-    callback(snap.docs.map(d=>({id:d.id,...d.data()})));
-  });
+  const ref = db.ref(FB_PATH+"/"+col);
+  const handler = snap => {
+    const val = snap.val() || {};
+    callback(Object.keys(val).map(id=>({id, ...val[id]})));
+  };
+  ref.on("value", handler);
+  return () => ref.off("value", handler);
 }
 
 // ====== SEED ======
@@ -220,7 +225,6 @@ function ControlePresenca(){
   const [toast,        setToast]        = useState(null);
 
   const presencasRef = useRef({});
-  const [modalStatus, setModalStatus] = useState(null); // {colabId, dateIso, nome}
   const saveTimer    = useRef(null);
 
   const showToast = useCallback((msg,err=false)=>{
@@ -290,21 +294,19 @@ function ControlePresenca(){
     },1500);
   },[showToast]);
 
-  const setStatus=useCallback((colabId,dateIso,next)=>{
+  const cycleStatus=useCallback((colabId,dateIso)=>{
     const key=`${colabId}:${dateIso}`;
     setPresencas(prev=>{
+      const current=prev[key]||"vazio";
+      const ids=["vazio",...tiposStatus.map(t=>t.id)];
+      const next=ids[(ids.indexOf(current)+1)%ids.length];
       const nm={...prev};
-      if(!next||next==="vazio") delete nm[key]; else nm[key]=next;
+      if(next==="vazio") delete nm[key]; else nm[key]=next;
       presencasRef.current=nm;
       flushPresencas();
       return nm;
     });
-    setModalStatus(null);
-  },[flushPresencas]);
-
-  const openModalStatus=useCallback((colabId,dateIso,nome)=>{
-    setModalStatus({colabId,dateIso,nome});
-  },[]);
+  },[tiposStatus,flushPresencas]);
 
   const gerarFolgas=useCallback((colabId,diaSemana,presencasAtual)=>{
     if(diaSemana===null||diaSemana===undefined) return presencasAtual;
@@ -553,10 +555,10 @@ function ControlePresenca(){
                     h("span",{style:S.groupHeaderHorario},grupo.turno.horario),
                     h("span",{style:S.groupHeaderCount},`${grupo.items.length} pessoas`)
                   )),
-                  ...grupo.items.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
+                  ...grupo.items.map((c,i)=>rowColab(c,i,weekDays,presencas,cycleStatus,
                     ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo))
                 )):
-                h("tbody",null,...colaboradoresDoTurno.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
+                h("tbody",null,...colaboradoresDoTurno.map((c,i)=>rowColab(c,i,weekDays,presencas,cycleStatus,
                   ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo)))
             )
           )
@@ -583,120 +585,8 @@ function ControlePresenca(){
         )
       )
     ),
-    modalStatus&&h(ModalStatus,{
-      colabId:modalStatus.colabId,
-      dateIso:modalStatus.dateIso,
-      nome:modalStatus.nome,
-      statusAtual:presencas[`${modalStatus.colabId}:${modalStatus.dateIso}`]||"vazio",
-      tiposStatus,
-      onSelect:setStatus,
-      onClose:()=>setModalStatus(null),
-    }),
     showPrint&&h(PrintModal,{colaboradores,presencas,tiposStatus,weekDays,onClose:()=>setShowPrint(false)}),
     toast&&h("div",{style:{...S.toast,background:toast.err?"#D32F2F":"#1A1208"}},toast.msg)
-  );
-}
-
-// ====== MODAL DE SELEÇÃO DE STATUS ======
-function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelect, onClose }) {
-  const dataFmt = dateIso.split("-").reverse().join("/");
-  const WEEKDAY = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-  const dia = WEEKDAY[new Date(dateIso+"T12:00:00").getDay()];
-
-  return h("div", { style:{ ...S.modalOverlay, alignItems:"center" }, onClick:onClose },
-    h("div", {
-      style:{
-        background:"#FAF8F4",
-        borderRadius:18,
-        padding:"20px 16px 24px",
-        width:"92%", maxWidth:380,
-        animation:"fadeIn 0.18s ease-out",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.4)",
-      },
-      onClick:e=>e.stopPropagation()
-    },
-
-      // Cabeçalho
-      h("div",{style:{marginBottom:16}},
-        h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
-          h("p",{style:{fontSize:11,fontWeight:700,color:"#9C9586",textTransform:"uppercase",letterSpacing:"0.05em",margin:0}},
-            `${dia}, ${dataFmt}`
-          ),
-          h("button",{style:{border:"none",background:"#EFEBE2",borderRadius:8,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"},onClick:onClose},
-            h(X,{size:16,color:"#5C5648"})
-          )
-        ),
-        h("p",{style:{fontSize:15,fontWeight:800,color:"#1A1208",margin:0}},nome)
-      ),
-
-      // Opções de status
-      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
-
-        // Botão limpar (só aparece se tiver algo marcado)
-        statusAtual!=="vazio" && h("button",{
-          onClick:()=>onSelect(colabId,dateIso,"vazio"),
-          style:{
-            display:"flex",alignItems:"center",gap:12,
-            padding:"11px 14px",borderRadius:12,
-            border:"1.5px dashed #D8CDB8",
-            background:"#FAFAF8",cursor:"pointer",
-          }
-        },
-          h("div",{style:{
-            width:40,height:40,borderRadius:10,
-            background:"#F4F1EA",border:"1.5px solid #D8CDB8",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            fontSize:18,
-          }},"✕"),
-          h("div",null,
-            h("div",{style:{fontSize:13.5,fontWeight:700,color:"#5C5648"}}, "Limpar marcação"),
-            h("div",{style:{fontSize:11,color:"#9C9586",marginTop:1}}, "Remove o status deste dia")
-          )
-        ),
-
-        // Tipos de status
-        ...tiposStatus.map(t => {
-          const ativo = statusAtual === t.id;
-          return h("button",{
-            key:t.id,
-            onClick:()=>onSelect(colabId,dateIso,t.id),
-            style:{
-              display:"flex",alignItems:"center",gap:12,
-              padding:"11px 14px",borderRadius:12,
-              border: ativo?`2px solid ${t.color}`:"1.5px solid #EFEBE2",
-              background: ativo?t.bg:"#FFFFFF",
-              cursor:"pointer",
-              boxShadow: ativo?`0 2px 12px ${t.color}44`:"none",
-              transform: ativo?"scale(1.01)":"scale(1)",
-              transition:"all 0.1s",
-            }
-          },
-            // Badge
-            h("div",{style:{
-              width:40,height:40,borderRadius:10,flexShrink:0,
-              background:ativo?t.color:t.bg,
-              border:`2px solid ${t.color}`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              fontSize:13,fontWeight:900,
-              color:ativo?"#FFF":t.color,
-              letterSpacing:"-0.5px",
-              boxShadow:ativo?`0 2px 8px ${t.color}66`:"none",
-            }},t.short),
-            // Info
-            h("div",{style:{flex:1}},
-              h("div",{style:{fontSize:13.5,fontWeight:ativo?800:600,color:ativo?t.color:"#1A1208"}},t.label),
-              ativo && h("div",{style:{fontSize:11,color:t.color,marginTop:1,fontWeight:600}},"✓ Selecionado")
-            ),
-            // Indicador ativo
-            ativo && h("div",{style:{
-              width:10,height:10,borderRadius:"50%",
-              background:t.color,flexShrink:0,
-              boxShadow:`0 0 6px ${t.color}`,
-            }})
-          );
-        })
-      )
-    )
   );
 }
 
@@ -721,21 +611,17 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
       const isToday=dateIso===isoDate(new Date()),marcado=status!=="vazio";
       return h("td",{key,style:S.tdCell},
         h("button",{
-          onClick:()=>onCycle(colab.id,dateIso,colab.nome),
-          title: marcado?s.label:"Clique para marcar",
+          onClick:()=>onCycle(colab.id,dateIso),
           style:{
             ...S.cellBtn,
             background: isToday&&!marcado?"#FEF9F0":marcado?s.color:"#FFFFFF",
-            borderColor: isToday?"#E65100":marcado?s.color:"#E8E3D8",
+            borderColor: isToday?"#2B2620":marcado?s.color:"#E8E3D8",
             borderWidth: isToday||marcado?2:1,
-            color: marcado?"#FFFFFF":isToday?"#E65100":"#BDC3C7",
+            color: marcado?"#FFFFFF":s.color,
             fontWeight: marcado?900:600,
-            boxShadow: marcado?`0 2px 8px ${s.color}66`:"none",
-            position:"relative",
+            boxShadow: marcado?`0 2px 6px ${s.color}55`:"none",
           }
-        },
-          marcado ? s.short : h("span",{style:{fontSize:16,opacity:.3}},"+")
-        )
+        },s.short)
       );
     })
   );
