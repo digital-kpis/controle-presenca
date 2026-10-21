@@ -1212,7 +1212,22 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
       });
   }, [colaboradores, presencas, almocoData]);
 
-  let ultimoTurno = null;
+  const grupos = useMemo(() => {
+    const out = [];
+    presentes.forEach(c => {
+      let g = out[out.length-1];
+      if (!g || g.turno !== c.turno) { g = { turno:c.turno, info:TURNOS.find(t=>t.id===c.turno), lista:[] }; out.push(g); }
+      g.lista.push(c);
+    });
+    return out;
+  }, [presentes]);
+
+  const nomeCurto = (nome) => {
+    const p = (nome||"").trim().split(/\s+/);
+    const cap = s => s.charAt(0).toUpperCase()+s.slice(1).toLowerCase();
+    if (p.length <= 2) return p.map(cap).join(" ");
+    return cap(p[0])+" "+cap(p[p.length-1]);
+  };
 
   return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
 
@@ -1251,95 +1266,66 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
         h("p", { style:S.emptyTitle }, "Nenhum colaborador com presença nesta data"),
         h("p", { style:{ fontSize:12.5, color:"#9C9586", margin:0 } }, "Marque a presença na aba Escala primeiro.")
       ) :
-      h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
-        presentes.map(colab => {
-          const key  = `${colab.id}:${almocoData}`;
-          const reg  = almocos[key] || {};
-          const dur  = duracao(reg.saida, reg.retorno);
-          const info = TURNOS.find(t=>t.id===colab.turno);
-          const showHeader = colab.turno !== ultimoTurno;
-          ultimoTurno = colab.turno;
+      h("div", null,
+        grupos.map(g => h("div", { key:g.turno, style:{ marginBottom:14 } },
 
-          // Estado visual
-          const estado = !reg.saida ? "livre"
-                       : !reg.retorno ? "saiu"
-                       : "voltou";
-
-          const cores = {
-            livre:  { bg:"#FAFAFA",   borda:"#E8E3D8", badge:"#F4F1EA",   badgeText:"#9C9586",  label:"Toque para registrar saída" },
-            saiu:   { bg:"#FFFBF0",   borda:"#F39C12", badge:"#FFF3CD",   badgeText:"#B7770D",  label:"Toque para registrar retorno" },
-            voltou: { bg:"#F0FAF4",   borda:"#1A7A4A", badge:"#D4F0E0",   badgeText:"#1A7A4A",  label:"Toque para limpar" },
-          }[estado];
-
-          return h("div", { key:colab.id },
-
-            // Cabeçalho de turno
-            showHeader && h("div", { style:{ display:"flex", alignItems:"center", gap:6, padding:"4px 0 6px" } },
-              h("span", { style:{ width:8, height:8, borderRadius:"50%", background:info?.cor||"#ccc", flexShrink:0, display:"inline-block" } }),
-              h("span", { style:{ fontSize:11, fontWeight:800, color:"#6B6458", textTransform:"uppercase", letterSpacing:"0.05em" } },
-                info?.label||colab.turno, " · ", info?.horario||""
-              )
-            ),
-
-            // Card clicável
-            h("button", {
-              onClick: () => clicar(colab),
-              style:{
-                width:"100%", textAlign:"left", cursor:"pointer",
-                background: cores.bg,
-                border: `2px solid ${cores.borda}`,
-                borderRadius:12, padding:"12px 14px",
-                display:"flex", alignItems:"center", gap:12,
-                boxShadow: estado!=="livre" ? `0 2px 8px ${cores.borda}44` : "none",
-                transition:"all 0.15s",
-              }
-            },
-
-              // Indicador de estado (bolinha)
-              h("div", { style:{
-                width:40, height:40, borderRadius:10, flexShrink:0,
-                background: cores.badge,
-                border: `2px solid ${cores.borda}`,
-                display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-                gap:1,
-              }},
-                estado === "livre"   && h(UtensilsCrossed, { size:16, color:"#BDC3C7", strokeWidth:2 }),
-                estado === "saiu"    && h("span", { style:{ fontSize:11, fontWeight:900, color:"#B7770D", lineHeight:1 } }, "SAIU"),
-                estado === "voltou"  && h("span", { style:{ fontSize:10, fontWeight:900, color:"#1A7A4A", lineHeight:1 } }, "OK")
-              ),
-
-              // Info colaborador + horários
-              h("div", { style:{ flex:1, minWidth:0 } },
-                h("div", { style:{ fontSize:13, fontWeight:700, color:"#2B2620" } }, colab.nome),
-                h("div", { style:{ fontSize:10.5, color:"#9C9586", marginTop:1 } }, colab.matricula+" · "+colab.funcao),
-                h("div", { style:{ display:"flex", gap:8, marginTop:5, flexWrap:"wrap" } },
-                  reg.saida && h("span", { style:{
-                    fontSize:12, fontWeight:700,
-                    background:"#FFF3CD", color:"#B7770D",
-                    borderRadius:6, padding:"2px 7px",
-                  }}, `↑ ${reg.saida}`),
-                  reg.retorno && h("span", { style:{
-                    fontSize:12, fontWeight:700,
-                    background:"#D4F0E0", color:"#1A7A4A",
-                    borderRadius:6, padding:"2px 7px",
-                  }}, `↓ ${reg.retorno}`),
-                  dur && h("span", { style:{
-                    fontSize:11, fontWeight:600,
-                    background:"#EFEBE2", color:"#5C5648",
-                    borderRadius:6, padding:"2px 7px",
-                  }}, dur)
-                )
-              ),
-
-              // Instrução
-              h("div", { style:{
-                fontSize:10, color: cores.badgeText,
-                fontWeight:600, textAlign:"right", flexShrink:0,
-                maxWidth:70, lineHeight:1.3,
-              }}, cores.label)
+          // Cabeçalho de turno
+          h("div", { style:{ display:"flex", alignItems:"center", gap:6, padding:"4px 0 8px" } },
+            h("span", { style:{ width:8, height:8, borderRadius:"50%", background:g.info?.cor||"#ccc", flexShrink:0, display:"inline-block" } }),
+            h("span", { style:{ fontSize:11, fontWeight:800, color:"#6B6458", textTransform:"uppercase", letterSpacing:"0.05em" } },
+              g.info?.label||g.turno, " · ", g.info?.horario||"", "  (", g.lista.length, ")"
             )
-          );
-        })
+          ),
+
+          // Grade de quadradinhos
+          h("div", { style:{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(96px, 1fr))", gap:8 } },
+            g.lista.map(colab => {
+              const key  = `${colab.id}:${almocoData}`;
+              const reg  = almocos[key] || {};
+              const dur  = duracao(reg.saida, reg.retorno);
+              const estado = !reg.saida ? "livre" : !reg.retorno ? "saiu" : "voltou";
+              const cores = {
+                livre:  { bg:"#FAFAFA", borda:"#E8E3D8", badgeText:"#9C9586", label:"Livre" },
+                saiu:   { bg:"#FFFBF0", borda:"#F39C12", badgeText:"#B7770D", label:"SAIU" },
+                voltou: { bg:"#F0FAF4", borda:"#1A7A4A", badgeText:"#1A7A4A", label:"OK" },
+              }[estado];
+
+              return h("button", {
+                key: colab.id,
+                onClick: () => clicar(colab),
+                title: colab.nome,
+                style:{
+                  aspectRatio:"1 / 1", width:"100%", minWidth:0, cursor:"pointer",
+                  background: cores.bg, border:`2px solid ${cores.borda}`,
+                  borderRadius:12, padding:"6px 5px",
+                  display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"space-between",
+                  textAlign:"center", overflow:"hidden",
+                  boxShadow: estado!=="livre" ? `0 2px 8px ${cores.borda}44` : "none",
+                  transition:"all 0.15s",
+                }
+              },
+                // Ícone / estado
+                estado === "livre"
+                  ? h(UtensilsCrossed, { size:16, color:"#BDC3C7", strokeWidth:2 })
+                  : h("span", { style:{ fontSize:10, fontWeight:900, color:cores.badgeText, lineHeight:1, marginTop:2 } }, cores.label),
+
+                // Nome
+                h("div", { style:{
+                  fontSize:11, fontWeight:700, color:"#2B2620", lineHeight:1.15,
+                  display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden",
+                  wordBreak:"break-word", width:"100%",
+                }}, nomeCurto(colab.nome)),
+
+                // Horários
+                h("div", { style:{ minHeight:14, fontSize:10, fontWeight:700, lineHeight:1.2, color:cores.badgeText } },
+                  reg.saida && h("div", null, `↑${reg.saida}`),
+                  reg.retorno && h("div", null, `↓${reg.retorno}`),
+                  dur && h("div", { style:{ color:"#5C5648", fontWeight:600 } }, dur)
+                )
+              );
+            })
+          )
+        ))
       )
   );
 }
