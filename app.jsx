@@ -399,6 +399,18 @@ function ControlePresenca(){
     finally{ setSalvando(false); }
   },[showToast]);
 
+  const handleDeleteLancs=useCallback(async ids=>{
+    setSalvando(true);
+    try{
+      const res=await Promise.allSettled(ids.map(id=>fbDel("bancoHoras",id)));
+      const falhas=res.filter(r=>r.status==="rejected").length;
+      if(falhas) showToast(`${ids.length-falhas} removidos, ${falhas} com erro`,true);
+      else showToast(ids.length===1?"Lançamento removido":`${ids.length} lançamentos removidos`);
+    }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
   const handleSaveAlmoco=useCallback(async(colabId,data,saida,retorno)=>{
     const key=`${colabId}:${data}`;
     const next={...almocos};
@@ -568,6 +580,7 @@ function ControlePresenca(){
       onNovo:()=>{setEditingLanc(null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
+      onDeletarVarios:handleDeleteLancs,
     }),
     tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
@@ -743,8 +756,13 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
 }
 
 // ====== TELA BANCO DE HORAS ======
-function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,onNovo,onEditar,onDeletar}){
+function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,onNovo,onEditar,onDeletar,onDeletarVarios}){
   const [confirmDel,setConfirmDel]=useState(null);
+  const [modoSel,setModoSel]=useState(false);
+  const [selIds,setSelIds]=useState([]);
+  const [confirmMulti,setConfirmMulti]=useState(null);
+  const toggleSel=id=>setSelIds(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+  const sairSel=()=>{setModoSel(false);setSelIds([]);};
   const [filtroTurno,setFiltroTurno]=useState("todos");
   const colabsFiltrados=useMemo(()=>
     colaboradores.filter(c=>filtroTurno==="todos"||c.turno===filtroTurno).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR")),
@@ -785,7 +803,23 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
           h("span",{style:S.bhSaldosTitle},colabSel?`Lançamentos — ${colabSel.nome}`:"Todos os lançamentos"),
           colabSel&&h("button",{style:S.bhLimparFiltro,onClick:()=>setBhFiltro(null)},"× Ver todos")
         ),
-        h("button",{style:S.addBtn,onClick:onNovo},h(Plus,{size:15,strokeWidth:2.5}),h("span",null,"Lançar horas"))
+        h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
+          h("button",{style:{padding:"8px 12px",borderRadius:10,border:"1.5px solid "+(modoSel?"#2B2620":"#E8E3D8"),background:modoSel?"#2B2620":"#FFF",color:modoSel?"#FAF8F4":"#5C5648",fontSize:12.5,fontWeight:700,cursor:"pointer"},
+            onClick:()=>modoSel?sairSel():setModoSel(true)},modoSel?"Cancelar":"Selecionar"),
+          h("button",{style:S.addBtn,onClick:onNovo},h(Plus,{size:15,strokeWidth:2.5}),h("span",null,"Lançar horas"))
+        )
+      ),
+      // Barra de ações em lote
+      (modoSel||colabSel)&&lancsFiltrados.length>0&&h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",padding:"8px 14px",background:"#FAF8F4",borderBottom:"1px solid #F4F1EA"}},
+        modoSel&&h("button",{style:{padding:"7px 10px",borderRadius:8,border:"1.5px solid #E8E3D8",background:"#FFF",fontSize:12,fontWeight:700,color:"#5C5648",cursor:"pointer"},
+          onClick:()=>setSelIds(selIds.length===lancsFiltrados.length?[]:lancsFiltrados.map(b=>b.id))},
+          selIds.length===lancsFiltrados.length?"Desmarcar todos":"Selecionar todos"),
+        modoSel&&h("button",{disabled:selIds.length===0,style:{padding:"7px 12px",borderRadius:8,border:"none",background:selIds.length?"#C0392B":"#E8E3D8",color:"#FFF",fontSize:12,fontWeight:700,cursor:selIds.length?"pointer":"default"},
+          onClick:()=>setConfirmMulti({ids:selIds,titulo:`Remover ${selIds.length} lançamento${selIds.length>1?"s":""}?`,texto:"Os lançamentos selecionados serão apagados e o saldo será recalculado."})},
+          `Remover selecionados (${selIds.length})`),
+        colabSel&&h("button",{style:{marginLeft:"auto",padding:"7px 10px",borderRadius:8,border:"1.5px solid #C0392B",background:"#FFF",color:"#C0392B",fontSize:12,fontWeight:700,cursor:"pointer"},
+          onClick:()=>setConfirmMulti({ids:lancsFiltrados.map(b=>b.id),titulo:`Limpar tudo de ${colabSel.nome}?`,texto:`Serão removidos todos os ${lancsFiltrados.length} lançamentos deste colaborador. Não dá para desfazer.`})},
+          "Limpar todos do colaborador")
       ),
       lancsFiltrados.length===0?
         h("div",{style:S.bhEmpty},
@@ -795,7 +829,9 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
         h("div",{style:S.bhLancsList},
           lancsFiltrados.map(b=>{
             const colab=colaboradores.find(c=>c.id===b.colab_id),{txt,color,bg}=fmtSaldo(b.minutos);
-            return h("div",{key:b.id,style:S.bhLancCard},
+            const marcado=selIds.includes(b.id);
+            return h("div",{key:b.id,style:{...S.bhLancCard,...(modoSel&&marcado?{background:"#FFF3F1"}:{}),...(modoSel?{cursor:"pointer"}:{})},onClick:modoSel?()=>toggleSel(b.id):undefined},
+              modoSel&&h("div",{style:{width:22,height:22,borderRadius:6,flexShrink:0,border:"2px solid "+(marcado?"#C0392B":"#C9C3B8"),background:marcado?"#C0392B":"#FFF",color:"#FFF",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900}},marcado?"✓":""),
               h("div",{style:S.bhLancLeft},
                 h("div",{style:{...S.bhLancTipo,background:b.minutos>0?"#D4F0E0":"#FADBD8",color:b.minutos>0?"#1A7A4A":"#C0392B"}},b.minutos>0?"+":"−"),
                 h("div",null,
@@ -805,14 +841,24 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
               ),
               h("div",{style:S.bhLancRight},
                 h("span",{style:{fontSize:14,fontWeight:800,color,background:bg,borderRadius:8,padding:"4px 10px"}},txt),
-                h("div",{style:{display:"flex",gap:2,marginTop:4}},
-                  h("button",{style:S.iconBtn,onClick:()=>onEditar(b)},h(Pencil,{size:13})),
-                  h("button",{style:{...S.iconBtn,color:"#C0392B"},onClick:()=>setConfirmDel(b)},h(Trash2,{size:13}))
+                !modoSel&&h("div",{style:{display:"flex",gap:6,marginTop:6}},
+                  h("button",{"aria-label":"Editar",style:{...S.iconBtn,width:38,height:38,borderRadius:10,background:"#F4F1EA",color:"#5C5648",cursor:"pointer"},onClick:()=>onEditar(b)},h(Pencil,{size:18})),
+                  h("button",{"aria-label":"Excluir",style:{...S.iconBtn,width:38,height:38,borderRadius:10,background:"#FDECEA",color:"#C0392B",cursor:"pointer"},onClick:()=>setConfirmDel(b)},h(Trash2,{size:18}))
                 )
               )
             );
           })
         )
+    ),
+    confirmMulti&&h("div",{style:S.modalOverlay,onClick:()=>setConfirmMulti(null)},
+      h("div",{style:S.confirmCard,onClick:e=>e.stopPropagation()},
+        h("p",{style:S.confirmTitle},confirmMulti.titulo),
+        h("p",{style:S.confirmText},confirmMulti.texto),
+        h("div",{style:S.confirmActions},
+          h("button",{style:S.btnGhost,onClick:()=>setConfirmMulti(null)},"Cancelar"),
+          h("button",{style:S.btnDanger,onClick:async()=>{const ids=confirmMulti.ids;setConfirmMulti(null);sairSel();await onDeletarVarios(ids);}},"Remover")
+        )
+      )
     ),
     confirmDel&&h("div",{style:S.modalOverlay,onClick:()=>setConfirmDel(null)},
       h("div",{style:S.confirmCard,onClick:e=>e.stopPropagation()},
