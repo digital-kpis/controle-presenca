@@ -30,6 +30,7 @@ const TURNOS = [
   { id:"tarde",         label:"Tarde",         horario:"14:00 – 22:20", cor:"#5B8A72" },
   { id:"noite",         label:"Madrugada",     horario:"22:00 – 05:20", cor:"#4A5C7A" },
   { id:"treinamento",   label:"Treinamento",   horario:"Conforme agenda", cor:"#7B1FA2" },
+  { id:"plenos",        label:"Plenos",        horario:"Conforme escala", cor:"#00838F" },
 ];
 const VISAO_TODOS = { id:"todos", label:"Todos", horario:"Todos os turnos", cor:"#2B2620" };
 
