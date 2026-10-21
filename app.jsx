@@ -1290,8 +1290,8 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
                 voltou: { bg:"#F0FAF4", borda:"#1A7A4A", badgeText:"#1A7A4A", label:"OK" },
               }[estado];
 
-              return h("button", {
-                key: colab.id,
+              return h("div", { key: colab.id, style:{ position:"relative", minWidth:0 } },
+              h("button", {
                 onClick: () => clicar(colab),
                 title: colab.nome,
                 style:{
@@ -1322,6 +1322,25 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
                   reg.retorno && h("div", null, `↓${reg.retorno}`),
                   dur && h("div", { style:{ color:"#5C5648", fontWeight:600 } }, dur)
                 )
+              ),
+
+              // Excluir lançamento
+              reg.saida && h("button", {
+                title:"Excluir lançamento",
+                "aria-label":"Excluir lançamento de "+colab.nome,
+                onClick: async (e) => {
+                  e.stopPropagation();
+                  if (window.confirm("Excluir o lançamento de almoço de "+nomeCurto(colab.nome)+"?")) {
+                    await onSave(colab.id, almocoData, "", "");
+                  }
+                },
+                style:{
+                  position:"absolute", top:-6, right:-6, width:22, height:22, borderRadius:"50%",
+                  background:"#C0392B", color:"#FFF", border:"2px solid #FFF",
+                  fontSize:13, fontWeight:900, lineHeight:1, cursor:"pointer", padding:0,
+                  display:"flex", alignItems:"center", justifyContent:"center", zIndex:2,
+                }
+              }, "×")
               );
             })
           )
