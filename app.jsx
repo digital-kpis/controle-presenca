@@ -25,12 +25,12 @@ const Save         = p => h(Icon,p, h("path",{d:"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 
 
 // ====== CONSTANTES ======
 const TURNOS = [
-  { id:"manha",         label:"Manhã",        horario:"07:00 – 15:20", cor:"#D97757" },
-  { id:"intermediario", label:"Intermediário", horario:"10:00 – 18:20", cor:"#B08968" },
-  { id:"tarde",         label:"Tarde",         horario:"14:00 – 22:20", cor:"#5B8A72" },
-  { id:"noite",         label:"Madrugada",     horario:"22:00 – 05:20", cor:"#4A5C7A" },
-  { id:"treinamento",   label:"Treinamento",   horario:"Conforme agenda", cor:"#7B1FA2" },
-  { id:"plenos",        label:"Plenos",        horario:"Conforme escala", cor:"#00838F" },
+  { id:"manha",         label:"Manhã",        horario:"07:00 – 15:20", cor:"#F5A300" },
+  { id:"intermediario", label:"Intermediário", horario:"10:00 – 18:20", cor:"#2E86DE" },
+  { id:"tarde",         label:"Tarde",         horario:"14:00 – 22:20", cor:"#E67E22" },
+  { id:"noite",         label:"Madrugada",     horario:"22:00 – 05:20", cor:"#34495E" },
+  { id:"treinamento",   label:"Treinamento",   horario:"Conforme agenda", cor:"#8E44AD" },
+  { id:"plenos",        label:"Plenos",        horario:"Conforme escala", cor:"#00A19B" },
 ];
 const VISAO_TODOS = { id:"todos", label:"Todos", horario:"Todos os turnos", cor:"#2B2620" };
 
@@ -454,7 +454,11 @@ function ControlePresenca(){
 
   const getStatusInfo=useCallback(id=>{
     if(!id||id==="vazio") return STATUS_VAZIO;
-    return tiposStatus.find(t=>t.id===id)||STATUS_VAZIO;
+    const t=tiposStatus.find(x=>x.id===id);
+    if(!t) return STATUS_VAZIO;
+    if(t.id==="ferias"&&t.color==="#E65100") return {...t,color:"#1976D2",bg:"#BBDEFB"};
+    if(t.id==="folga"&&t.color==="#546E7A")  return {...t,color:"#78909C",bg:"#ECEFF1"};
+    return t;
   },[tiposStatus]);
 
   const saldosPorColab=useMemo(()=>{
@@ -520,8 +524,8 @@ function ControlePresenca(){
         ...TURNOS.map(t=>{
           const count=colaboradores.filter(c=>c.turno===t.id).length;
           const active=!isVisaoTodos&&t.id===turnoAtivo;
-          return h("button",{key:t.id,onClick:()=>setTurnoAtivo(t.id),style:{...S.tab,...(active?{...S.tabActive,borderColor:t.cor}:{})}},
-            h("span",{style:{...S.tabDot,background:active?t.cor:"#D8D2C5"}}),
+          return h("button",{key:t.id,onClick:()=>setTurnoAtivo(t.id),style:{...S.tab,...(active?{...S.tabActive,borderColor:t.cor,background:t.cor+"22"}:{})}},
+            h("span",{style:{...S.tabDot,width:9,height:9,background:t.cor}}),
             h("span",{style:{fontWeight:active?700:500,color:active?"#2B2620":"#6B6458"}},t.label),
             h("span",{style:S.tabCount},count)
           );
@@ -757,12 +761,12 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
           title: marcado?s.label:"Clique para marcar",
           style:{
             ...S.cellBtn,
-            background: isToday&&!marcado?"#FEF9F0":marcado?s.color:"#FFFFFF",
-            borderColor: isToday?"#E65100":marcado?s.color:"#E8E3D8",
+            background: isToday&&!marcado?"#FFF8DC":marcado?s.color:"#FFFFFF",
+            borderColor: isToday?"#2B2620":marcado?s.color:"#E8E3D8",
             borderWidth: isToday||marcado?2:1,
-            color: marcado?"#FFFFFF":isToday?"#E65100":"#BDC3C7",
+            color: marcado?"#FFFFFF":isToday?"#2B2620":"#BDC3C7",
             fontWeight: marcado?900:600,
-            boxShadow: marcado?`0 2px 8px ${s.color}66`:"none",
+            boxShadow: isToday&&marcado?`0 0 0 2px #FFF, 0 0 0 4px #2B2620`:marcado?`0 2px 8px ${s.color}66`:"none",
             position:"relative",
           }
         },
@@ -1310,15 +1314,15 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
       ),
       h("div", { style:{ display:"flex", gap:16, marginTop:10, padding:"8px 0 0", borderTop:"1px solid #F4F1EA" } },
         h("div", { style:{ display:"flex", alignItems:"center", gap:6 } },
-          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#F4F1EA", border:"1.5px solid #E8E3D8" } }),
+          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#FFFFFF", border:"1.5px solid #D8D2C5" } }),
           h("span", { style:{ fontSize:11, color:"#9C9586" } }, "Não registrado")
         ),
         h("div", { style:{ display:"flex", alignItems:"center", gap:6 } },
-          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#FFF3CD", border:"1.5px solid #F39C12" } }),
+          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#FFE08A", border:"1.5px solid #E59E00" } }),
           h("span", { style:{ fontSize:11, color:"#9C9586" } }, "Saiu")
         ),
         h("div", { style:{ display:"flex", alignItems:"center", gap:6 } },
-          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#D4F0E0", border:"1.5px solid #1A7A4A" } }),
+          h("div", { style:{ width:10, height:10, borderRadius:3, background:"#BDE8CF", border:"1.5px solid #1A7A4A" } }),
           h("span", { style:{ fontSize:11, color:"#9C9586" } }, "Voltou")
         )
       )
@@ -1349,9 +1353,9 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
               const dur  = duracao(reg.saida, reg.retorno);
               const estado = !reg.saida ? "livre" : !reg.retorno ? "saiu" : "voltou";
               const cores = {
-                livre:  { bg:"#FAFAFA", borda:"#E8E3D8", badgeText:"#9C9586", label:"Livre" },
-                saiu:   { bg:"#FFFBF0", borda:"#F39C12", badgeText:"#B7770D", label:"SAIU" },
-                voltou: { bg:"#F0FAF4", borda:"#1A7A4A", badgeText:"#1A7A4A", label:"OK" },
+                livre:  { bg:"#FFFFFF", borda:"#D8D2C5", badgeText:"#8A8478", label:"Livre" },
+                saiu:   { bg:"#FFE08A", borda:"#E59E00", badgeText:"#6B4500", label:"SAIU" },
+                voltou: { bg:"#BDE8CF", borda:"#1A7A4A", badgeText:"#0F5A34", label:"✓ VOLTOU" },
               }[estado];
 
               return h("div", { key: colab.id, style:{ position:"relative", minWidth:0 } },
@@ -1633,7 +1637,7 @@ const S={
   table:{borderCollapse:"collapse",width:"100%",minWidth:580},
   thName:{textAlign:"left",fontSize:10,fontWeight:700,color:"#5C5648",textTransform:"uppercase",letterSpacing:"0.05em",padding:"9px 12px",position:"sticky",left:0,background:"#F0EBE0",borderBottom:"2px solid #D8CDB8",minWidth:180,zIndex:2},
   thDay:{textAlign:"center",padding:"7px 3px",borderBottom:"2px solid #D8CDB8",borderLeft:"1px solid #E8E0D0",color:"#3D3028",fontWeight:700,minWidth:52},
-  thDayToday:{background:"#FFF3E0",borderBottomColor:"#E65100"},
+  thDayToday:{background:"#FFF3C4",borderBottomColor:"#2B2620"},
   thDaySunday:{background:"#FBFAF7"},
   tdName:{padding:"7px 12px",borderBottom:"1px solid #F4F1EA",position:"sticky",left:0,backgroundColor:"#FFF",zIndex:1},
   nameCell:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6},
