@@ -250,6 +250,23 @@ function ControlePresenca(){
       const sorted=docs.sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
       setColaboradores(sorted); LC.set("colaboradores",sorted);
       setPronto(true);
+
+      // Migração única: move colaboradores com função Pleno / Pleno PREV. para a aba Plenos
+      if(!window.__MIG_PLENOS__){
+        window.__MIG_PLENOS__=true;
+        (async()=>{
+          try{
+            if(LC.get("migPlenos",false)) return;
+            let jaFeito=false;
+            try{ jaFeito=(await getDB().collection("config").doc("migracaoPlenos").get()).exists; }catch(e){}
+            if(jaFeito){ LC.set("migPlenos",true); return; }
+            const alvo=docs.filter(c=>/^pleno/i.test(c.funcao||"") && c.turno!=="plenos");
+            await Promise.all(alvo.map(c=>fbSet("colaboradores",c.id,{turno:"plenos"})));
+            LC.set("migPlenos",true);
+            try{ await getDB().collection("config").doc("migracaoPlenos").set({feito:true,em:new Date().toISOString(),movidos:alvo.map(c=>c.id)}); }catch(e){}
+          }catch(e){ console.warn("Migração Plenos falhou:",e); }
+        })();
+      }
     }));
 
     unsubs.push(fbListen("tiposStatus", docs=>{
