@@ -1639,7 +1639,7 @@ const S={
   configCard:{background:"#FFF",borderRadius:16,padding:"24px 20px",maxWidth:460,width:"100%",margin:"0 12px",boxShadow:"0 2px 20px rgba(43,38,32,0.1)"},
   configTitle:{fontFamily:FD,fontSize:20,fontWeight:700,margin:"0 0 6px"},
   configSub:{fontSize:13,color:"#6B6458",margin:"0 0 20px",lineHeight:1.6},
-  header:{background:"#1A1208",borderBottom:"1px solid #3D2E10",position:"sticky",top:0,zIndex:10},
+  header:{background:"#1A1208",borderBottom:"1px solid #3D2E10",position:"relative",zIndex:10},
   headerTop:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",gap:10},
   brandRow:{display:"flex",alignItems:"center",gap:10,minWidth:0},
   brandMark:{width:34,height:34,borderRadius:9,background:"#2B2620",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0},
