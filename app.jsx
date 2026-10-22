@@ -1189,6 +1189,23 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef }) {
 
   const dataFmt = hoje.split("-").reverse().join("/");
 
+  // Presentes por horário (turno)
+  const porHorario = useMemo(() => {
+    const agora = new Date(); const min = agora.getHours()*60 + agora.getMinutes();
+    const emAndamento = (hor) => {
+      const m = /(\d{2}):(\d{2})\s*[–-]\s*(\d{2}):(\d{2})/.exec(hor||"");
+      if (!m) return false;
+      const ini = +m[1]*60 + +m[2], fim = +m[3]*60 + +m[4];
+      return ini <= fim ? (min >= ini && min < fim) : (min >= ini || min < fim);
+    };
+    return TURNOS.filter(t => t.id !== "afastados").map(t => {
+      const lista = colaboradores.filter(c => c.turno === t.id);
+      const pres  = lista.filter(c => presencas[`${c.id}:${hoje}`] === "presente").length;
+      return { ...t, total: lista.length, pres, agora: emAndamento(t.horario) };
+    }).filter(t => t.total > 0);
+  }, [colaboradores, presencas, hoje]);
+  const totalPresentes = porHorario.reduce((n, t) => n + t.pres, 0);
+
   return h("div", { style: S.resumoWrap },
     h("div", { style: S.resumoHeader },
       h("span", { style: S.resumoTitulo }, `Resumo de hoje — ${dataFmt}`),
@@ -1231,6 +1248,32 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef }) {
           h("div", { style: { fontSize: 18, fontWeight: 900, color: "#8A8478", lineHeight: 1 } }, semLancamento),
           h("div", { style: { fontSize: 10, color: "#8A8478", lineHeight: 1, marginTop: 1 } }, "Sem marcação")
         )
+      )
+    ),
+
+    // Presentes por horário
+    porHorario.length > 0 && h("div", { style: { marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.12)" } },
+      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 } },
+        h("span", { style: { fontSize: 11, fontWeight: 800, color: "#C9BC9A", textTransform: "uppercase", letterSpacing: "0.05em" } }, "Presentes por horário"),
+        h("span", { style: { fontSize: 11, color: "#C9BC9A" } }, `${totalPresentes} presentes no total`)
+      ),
+      h("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 } },
+        porHorario.map(t => h("div", { key: t.id, style: {
+          flexShrink: 0, minWidth: 118, borderRadius: 10, padding: "7px 10px",
+          background: "rgba(255,255,255,0.07)",
+          border: t.agora ? `1.5px solid ${t.cor}` : "1.5px solid rgba(255,255,255,0.10)",
+        }},
+          h("div", { style: { display: "flex", alignItems: "center", gap: 5, marginBottom: 3 } },
+            h("span", { style: { width: 8, height: 8, borderRadius: "50%", background: t.cor, flexShrink: 0 } }),
+            h("span", { style: { fontSize: 11, fontWeight: 800, color: "#FAF8F4" } }, t.label),
+            t.agora && h("span", { style: { fontSize: 8.5, fontWeight: 900, color: "#1A1208", background: t.cor, borderRadius: 4, padding: "1px 4px", marginLeft: "auto" } }, "AGORA")
+          ),
+          h("div", { style: { fontSize: 10, color: "#C9BC9A", marginBottom: 3 } }, t.horario),
+          h("div", { style: { display: "flex", alignItems: "baseline", gap: 3 } },
+            h("span", { style: { fontSize: 20, fontWeight: 900, color: t.pres === t.total ? "#6EE7A0" : "#FAF8F4", lineHeight: 1 } }, t.pres),
+            h("span", { style: { fontSize: 11, color: "#C9BC9A" } }, `/ ${t.total}`)
+          )
+        ))
       )
     )
   );
