@@ -31,6 +31,7 @@ const TURNOS = [
   { id:"noite",         label:"Madrugada",     horario:"22:00 – 05:20", cor:"#34495E" },
   { id:"treinamento",   label:"Treinamento",   horario:"Conforme agenda", cor:"#8E44AD" },
   { id:"plenos",        label:"Plenos",        horario:"Conforme escala", cor:"#00A19B" },
+  { id:"afastados",     label:"Afastados",     horario:"Fora da escala",  cor:"#8D6E63" },
 ];
 const VISAO_TODOS = { id:"todos", label:"Todos", horario:"Todos os turnos", cor:"#2B2620" };
 
