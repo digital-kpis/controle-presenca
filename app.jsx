@@ -5,6 +5,7 @@ const h = React.createElement;
 function Icon({ children, size=16, strokeWidth=2, color="currentColor", style }) {
   return h("svg", { width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:color, strokeWidth, strokeLinecap:"round", strokeLinejoin:"round", style }, children);
 }
+const Search       = p => h(Icon,p, h("circle",{cx:11,cy:11,r:7}), h("path",{d:"M21 21l-4.3-4.3"}));
 const Plus         = p => h(Icon,p, h("path",{d:"M12 5v14M5 12h14"}));
 const X            = p => h(Icon,p, h("path",{d:"M18 6 6 18M6 6l12 12"}));
 const Check        = p => h(Icon,p, h("path",{d:"M20 6 9 17l-5-5"}));
@@ -211,6 +212,7 @@ function ControlePresenca(){
   const [almocoData,   setAlmocoData]   = useState(()=>isoDate(new Date()));
   const [tela,         setTela]         = useState("presenca");
   const [turnoAtivo,   setTurnoAtivo]   = useState("manha");
+  const [busca,        setBusca]        = useState("");
   const [anchorDate,   setAnchorDate]   = useState(()=>new Date());
   const [showCadastro, setShowCadastro] = useState(false);
   const [editingColab, setEditingColab] = useState(null);
@@ -467,15 +469,19 @@ function ControlePresenca(){
   },[bancoHoras]);
 
   const weekDays=useMemo(()=>getWeekDays(anchorDate),[anchorDate]);
-  const isVisaoTodos=turnoAtivo==="todos";
+  const norm=t=>(t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const termo=norm(busca);
+  const buscando=termo.length>0;
+  const isVisaoTodos=turnoAtivo==="todos"||buscando;
   const colaboradoresDoTurno=useMemo(()=>
     colaboradores.filter(c=>c.turno===turnoAtivo).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR")),
     [colaboradores,turnoAtivo]
   );
   const gruposPorTurno=useMemo(()=>
-    TURNOS.map(t=>({turno:t,items:colaboradores.filter(c=>c.turno===t.id).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"))})).filter(g=>g.items.length>0),
-    [colaboradores]
+    TURNOS.map(t=>({turno:t,items:colaboradores.filter(c=>c.turno===t.id&&(!termo||norm(c.nome).includes(termo)||norm(c.matricula).includes(termo))).sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"))})).filter(g=>g.items.length>0),
+    [colaboradores,termo]
   );
+  const pessoasVisiveis=gruposPorTurno.reduce((n,g)=>n+g.items.length,0);
 
   if(!pronto) return h("div",{style:S.loadingScreen},
     h("div",{style:S.loadingDot}),
@@ -535,12 +541,12 @@ function ControlePresenca(){
     ),
 
     tela==="presenca"&&h("div",null,
-      h(ResumoDia,{colaboradores,presencas,tiposStatus,dataRef:isoDate(new Date())}),
+      h(ResumoDia,{colaboradores,presencas,tiposStatus,dataRef:isoDate(new Date()),busca,setBusca}),
       h("div",{style:S.subbar},
         h("div",{style:S.turnoChip},
           h("span",{style:{...S.turnoChipDot,background:turnoInfo.cor}}),
           h(CalendarDays,{size:14,color:"#8A8478"}),
-          h("span",{style:S.turnoChipText},isVisaoTodos?`${gruposPorTurno.length} turnos · ${colaboradores.length} pessoas`:turnoInfo.horario)
+          h("span",{style:S.turnoChipText},isVisaoTodos?`${gruposPorTurno.length} turnos · ${pessoasVisiveis} pessoas`:turnoInfo.horario)
         ),
         h("div",{style:S.weekNav},
           h("button",{style:S.weekNavBtn,onClick:()=>setAnchorDate(d=>addDays(d,-7))},h(ChevronLeft,{size:16})),
@@ -561,10 +567,11 @@ function ControlePresenca(){
         )
       ),
       h("main",{style:S.tableWrap},
-        (isVisaoTodos?colaboradores.length===0:colaboradoresDoTurno.length===0)?
+        (isVisaoTodos?(buscando?gruposPorTurno.length===0:colaboradores.length===0):colaboradoresDoTurno.length===0)?
           h("div",{style:S.emptyState},
             h(Users,{size:28,color:"#BDC3C7"}),
-            h("p",{style:S.emptyTitle},"Nenhum colaborador"),
+            h("p",{style:S.emptyTitle},buscando?`Nenhum operador encontrado para "${busca.trim()}"`:"Nenhum colaborador"),
+            buscando?h("button",{style:{...S.addBtn,marginTop:14},onClick:()=>setBusca("")},h("span",null,"Limpar pesquisa")):
             h("button",{style:{...S.addBtn,marginTop:14},onClick:()=>{setEditingColab({turno:isVisaoTodos?"manha":turnoAtivo});setShowCadastro(true);}},
               h(Plus,{size:16}),h("span",null,"Cadastrar")
             )
@@ -1165,7 +1172,7 @@ function TipoForm({initial,onClose,onSave}){
 }
 
 // ====== RESUMO DO DIA ======
-function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef }) {
+function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setBusca }) {
   const hoje = isoDate(new Date());
 
   // Conta por status para HOJE
@@ -1209,6 +1216,17 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef }) {
   return h("div", { style: S.resumoWrap },
     h("div", { style: S.resumoHeader },
       h("span", { style: S.resumoTitulo }, `Resumo de hoje — ${dataFmt}`),
+      h("div", { style: { display:"flex", alignItems:"center", gap:6, flex:"1 1 180px", maxWidth:300, minWidth:150,
+          background:"rgba(255,255,255,0.10)", border:"1.5px solid "+(busca?"#FF6D00":"rgba(255,255,255,0.18)"),
+          borderRadius:999, padding:"4px 10px" } },
+        h(Search, { size:14, color:"#C9BC9A", strokeWidth:2.4 }),
+        h("input", { type:"search", value:busca||"", placeholder:"Pesquisar operador", "aria-label":"Pesquisar operador",
+          onChange:e=>setBusca(e.target.value),
+          style:{ flex:1, minWidth:0, background:"transparent", border:"none", outline:"none", color:"#FAF8F4", fontSize:13, fontFamily:"inherit", WebkitAppearance:"none" } }),
+        busca&&h("button", { onClick:()=>setBusca(""), "aria-label":"Limpar pesquisa",
+          style:{ background:"transparent", border:"none", color:"#C9BC9A", cursor:"pointer", padding:0, display:"flex" } },
+          h(X, { size:14, strokeWidth:2.6 }))
+      ),
       h("span", { style: S.resumoSubtitulo },
         `${comLancamento} lançados · ${semLancamento} sem marcação`
       )
