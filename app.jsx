@@ -348,10 +348,20 @@ function ControlePresenca(){
   const handleSaveColab=useCallback(async colab=>{
     const isNovo=!colab.id||!colaboradores.some(c=>c.id===colab.id);
     const colabId=colab.id||`c${Date.now()}`;
-    const colabFinal={...colab,id:colabId};
+    const {admissao,nascimento,...colabSemRh}=colab;
+    const colabFinal={...colabSemRh,id:colabId};
     setSalvando(true);
     try{
       await fbSet("colaboradores",colabId,colabFinal);
+      // Lança / atualiza na aba Contratos (id = matrícula)
+      if(admissao){
+        const cargo=colabFinal.funcao==="Op. Loja"?"OPERADOR LOJA":colabFinal.funcao==="Pleno"||colabFinal.funcao==="Pleno PREV."?"OPERADOR LOJA PL":(colabFinal.funcao||"").toUpperCase();
+        const antigo=colaboradores.find(c=>c.id===colabId);
+        if(antigo&&antigo.matricula&&antigo.matricula!==colabFinal.matricula&&rh.some(r=>r.id===antigo.matricula)){
+          await fbDel("rh",antigo.matricula);
+        }
+        await fbSet("rh",colabFinal.matricula,{id:colabFinal.matricula,matricula:colabFinal.matricula,nome:colabFinal.nome,cargo,admissao,nascimento:nascimento||""});
+      }
       if(colabFinal.diaFolga!==null&&colabFinal.diaFolga!==undefined){
         let base={...presencasRef.current};
         if(!isNovo){
@@ -370,7 +380,21 @@ function ControlePresenca(){
     }catch(e){ showToast("Erro: "+e.message,true); }
     finally{ setSalvando(false); }
     setShowCadastro(false); setEditingColab(null);
-  },[colaboradores,tiposStatus,gerarFolgas,showToast]);
+  },[colaboradores,tiposStatus,gerarFolgas,showToast,rh]);
+
+  const handleSaveRh=useCallback(async row=>{
+    setSalvando(true);
+    try{ await fbSet("rh",row.id,row); showToast("Contrato salvo"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleDelRh=useCallback(async id=>{
+    setSalvando(true);
+    try{ await fbDel("rh",id); showToast("Removido da lista de contratos"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
 
   const handleDeleteColab=useCallback(async id=>{
     setSalvando(true);
@@ -644,10 +668,10 @@ function ControlePresenca(){
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
     }),
-    tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh}),
+    tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
     tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
-    showCadastro&&h(CadastroModal,{initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
+    showCadastro&&h(CadastroModal,{rh,initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
     showTipos&&h(TiposModal,{tipos:tiposStatus,onClose:()=>setShowTipos(false),onSave:handleSaveTipo,onDelete:handleDeleteTipo}),
     showLanc&&h(LancamentoModal,{initial:editingLanc,colaboradores,onClose:()=>{setShowLanc(false);setEditingLanc(null);},onSave:handleSaveLanc}),
     confirmDelColab&&h("div",{style:S.modalOverlay,onClick:()=>setConfirmDelColab(null)},
@@ -990,19 +1014,22 @@ function LancamentoModal({initial,colaboradores,onClose,onSave}){
 }
 
 // ====== MODAL CADASTRO ======
-function CadastroModal({initial,onClose,onSave}){
+function CadastroModal({rh,initial,onClose,onSave}){
   const isEdit=Boolean(initial&&initial.id);
   const [nome,     setNome]     = useState(initial?.nome||"");
   const [matricula,setMatricula]= useState(initial?.matricula||"");
   const [funcao,   setFuncao]   = useState(initial?.funcao||FUNCOES[0]);
   const [turno,    setTurno]    = useState(initial?.turno||"manha");
   const [diaFolga, setDiaFolga] = useState(initial?.diaFolga!==undefined ? initial.diaFolga : null);
+  const rhAtual=(rh||[]).find(r=>r.id===initial?.matricula);
+  const [admissao,  setAdmissao]  = useState(rhAtual?.admissao||"");
+  const [nascimento,setNascimento]= useState(rhAtual?.nascimento||"");
   const [error,    setError]    = useState("");
 
   const submit=()=>{
     if(!nome.trim()){setError("Informe o nome.");return;}
     if(!matricula.trim()){setError("Informe a matrícula.");return;}
-    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga});
+    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga, admissao, nascimento});
   };
 
   return h("div",{style:S.modalOverlay,onClick:onClose},
@@ -1020,6 +1047,17 @@ function CadastroModal({initial,onClose,onSave}){
         h("label",{style:S.label},"Matrícula"),
         h("input",{style:S.input,value:matricula,onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")),placeholder:"Ex.: 7153570",inputMode:"numeric"})
       ),
+      h("div",{style:{display:"flex",gap:10,flexWrap:"wrap"}},
+        h("div",{style:{...S.formGroup,flex:"1 1 140px"}},
+          h("label",{style:S.label},"Data de admissão"),
+          h("input",{type:"date",style:S.input,value:admissao,onChange:e=>setAdmissao(e.target.value)})
+        ),
+        h("div",{style:{...S.formGroup,flex:"1 1 140px"}},
+          h("label",{style:S.label},"Aniversário (nascimento)"),
+          h("input",{type:"date",style:S.input,value:nascimento,onChange:e=>setNascimento(e.target.value)})
+        )
+      ),
+      h("p",{style:{...S.hintText,marginTop:-6,marginBottom:10}},"Com a data de admissão preenchida, o colaborador é lançado na aba Contratos (45 e 90 dias)."),
       h("div",{style:S.formGroup},
         h("label",{style:S.label},"Função"),
         h("div",{style:S.chipRow},...FUNCOES.map(f=>h("button",{key:f,onClick:()=>setFuncao(f),style:{...S.chip,...(funcao===f?S.chipActive:{})}},f)))
@@ -1514,7 +1552,8 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
 
 // ====== CONTRATOS DE EXPERIÊNCIA (45 + 45 = 90 dias) ======
 // Contagem: o dia da admissão é o dia 1 → 45º dia = admissão + 44; 90º dia = admissão + 89
-function TelaContratos({ rh, onImportar }) {
+function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
+  const [edit, setEdit] = useState(null);   // linha em edição ({} = novo)
   const [filtro, setFiltro] = useState("exp");
   const [q, setQ] = useState("");
   const fileRef = useRef(null);
@@ -1580,7 +1619,8 @@ function TelaContratos({ rh, onImportar }) {
       h("div", null,
         h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Contratos de experiência"),
         h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Término em 45 e 90 dias, contando o dia da admissão como dia 1")),
-      h("div", null,
+      h("div", { style:{ display:"flex", gap:6, flexWrap:"wrap" } },
+        h("button", { style:{ ...S.addBtn, background:"#FFF", color:"#2B2620", border:"1.5px solid #E8E3D8" }, onClick:()=>setEdit({}) }, h(Plus,{size:15,strokeWidth:2.4}), h("span",null,"Novo")),
         h("input", { ref:fileRef, type:"file", accept:".csv,text/csv", style:{ display:"none" },
           onChange:e=>{ const f=e.target.files&&e.target.files[0]; if(f) onImportar(f); e.target.value=""; } }),
         h("button", { style:S.addBtn, onClick:()=>fileRef.current&&fileRef.current.click() }, h(FileText,{size:15,strokeWidth:2.2}), h("span",null,"Importar planilha (CSV)")))),
@@ -1605,11 +1645,11 @@ function TelaContratos({ rh, onImportar }) {
           h("div", { style:{ overflowX:"auto", border:"1.5px solid #E8E3D8", borderRadius:12, background:"#FFF" } },
             h("table", { style:{ borderCollapse:"separate", borderSpacing:0, width:"100%", minWidth:900 } },
               h("thead", null, h("tr", null,
-                ["Matrícula","Nome","Data de admissão","Descrição do cargo","Data de nascimento","Término 45 dias","Término 90 dias","Situação"].map((t,i) =>
+                ["Matrícula","Nome","Data de admissão","Descrição do cargo","Data de nascimento","Término 45 dias","Término 90 dias","Situação",""].map((t,i) =>
                   h("th", { key:t, style:{ ...th, ...(i===1?{ position:"sticky", left:0, zIndex:2 }:{}) } }, t)))),
               h("tbody", null,
                 visiveis.length === 0
-                  ? h("tr", null, h("td", { colSpan:8, style:{ ...td, textAlign:"center", color:"#8A8478", padding:"20px" } }, "Nenhum colaborador neste filtro"))
+                  ? h("tr", null, h("td", { colSpan:9, style:{ ...td, textAlign:"center", color:"#8A8478", padding:"20px" } }, "Nenhum colaborador neste filtro"))
                   : visiveis.map(l => {
                       const dest = k => ({ fontWeight: l.alvo===k?900:500, background: l.alvo===k?(corDias(l.dias).bg):"transparent" });
                       return h("tr", { key:l.id },
@@ -1620,10 +1660,64 @@ function TelaContratos({ rh, onImportar }) {
                         h("td", { style:td }, fmtIso(l.nascimento)),
                         h("td", { style:{ ...td, ...dest("45") } }, fmt(l.fim45)),
                         h("td", { style:{ ...td, ...dest("90") } }, fmt(l.fim90)),
-                        h("td", { style:td }, situacao(l)));
+                        h("td", { style:td }, situacao(l)),
+                        h("td", { style:{ ...td, textAlign:"right" } },
+                          h("button", { "aria-label":"Editar "+l.nome, onClick:()=>setEdit(l),
+                            style:{ width:34, height:34, borderRadius:9, border:"none", background:"#F4F1EA", color:"#5C5648", cursor:"pointer", display:"inline-flex", alignItems:"center", justifyContent:"center" } },
+                            h(Pencil, { size:16 }))));
                     }))))
-        )
+        ),
+    edit && h(ContratoModal, { initial: edit, rh, onClose:()=>setEdit(null),
+      onSave: async row => { await onSalvar(row); setEdit(null); },
+      onDelete: async id => { await onExcluir(id); setEdit(null); } })
   );
+}
+
+function ContratoModal({ initial, rh, onClose, onSave, onDelete }) {
+  const isEdit = Boolean(initial && initial.id);
+  const [nome, setNome] = useState(initial.nome || "");
+  const [matricula, setMatricula] = useState(initial.matricula || "");
+  const [cargo, setCargo] = useState(initial.cargo || "");
+  const [admissao, setAdmissao] = useState(initial.admissao || "");
+  const [nascimento, setNascimento] = useState(initial.nascimento || "");
+  const [error, setError] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const submit = () => {
+    if (!nome.trim()) { setError("Informe o nome."); return; }
+    if (!matricula.trim()) { setError("Informe a matrícula."); return; }
+    if (!admissao) { setError("Informe a data de admissão."); return; }
+    if (!isEdit && rh.some(r => r.id === matricula.trim())) { setError("Já existe um contrato com essa matrícula."); return; }
+    onSave({ id: isEdit ? initial.id : matricula.trim(), matricula: matricula.trim(), nome: nome.trim(), cargo: cargo.trim(), admissao, nascimento });
+  };
+
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:S.modalCard, onClick:e=>e.stopPropagation() },
+      h("div", { style:S.modalHeader },
+        h("h2", { style:S.modalTitle }, isEdit ? "Editar contrato" : "Novo contrato"),
+        h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Nome completo"),
+        h("input", { style:S.input, value:nome, onChange:e=>setNome(e.target.value), autoFocus:true })),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Matrícula"),
+        h("input", { style:{ ...S.input, ...(isEdit?{ background:"#F4F1EA", color:"#8A8478" }:{}) }, value:matricula, disabled:isEdit,
+          onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")), inputMode:"numeric" })),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Descrição do cargo"),
+        h("input", { style:S.input, value:cargo, onChange:e=>setCargo(e.target.value), placeholder:"Ex.: OPERADOR LOJA" })),
+      h("div", { style:{ display:"flex", gap:10, flexWrap:"wrap" } },
+        h("div", { style:{ ...S.formGroup, flex:"1 1 140px" } }, h("label", { style:S.label }, "Data de admissão"),
+          h("input", { type:"date", style:S.input, value:admissao, onChange:e=>setAdmissao(e.target.value) })),
+        h("div", { style:{ ...S.formGroup, flex:"1 1 140px" } }, h("label", { style:S.label }, "Aniversário (nascimento)"),
+          h("input", { type:"date", style:S.input, value:nascimento, onChange:e=>setNascimento(e.target.value) }))),
+      error && h("p", { style:S.errorText }, error),
+      confirmDel
+        ? h("div", { style:S.modalActions },
+            h("span", { style:{ fontSize:12, color:"#B71C1C", fontWeight:700, flex:1 } }, "Remover da lista de contratos?"),
+            h("button", { style:S.btnGhost, onClick:()=>setConfirmDel(false) }, "Não"),
+            h("button", { style:S.btnDanger, onClick:()=>onDelete(initial.id) }, "Remover"))
+        : h("div", { style:S.modalActions },
+            isEdit && h("button", { style:{ ...S.btnGhost, color:"#B71C1C", borderColor:"#E57373" }, onClick:()=>setConfirmDel(true) }, "Excluir"),
+            h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+            h("button", { style:S.btnPrimary, onClick:submit }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
 }
 
 // ====== MODAL DE IMPRESSÃO ======
