@@ -6,6 +6,7 @@ function Icon({ children, size=16, strokeWidth=2, color="currentColor", style })
   return h("svg", { width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:color, strokeWidth, strokeLinecap:"round", strokeLinejoin:"round", style }, children);
 }
 const Search       = p => h(Icon,p, h("circle",{cx:11,cy:11,r:7}), h("path",{d:"M21 21l-4.3-4.3"}));
+const FileText     = p => h(Icon,p, h("path",{d:"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"}), h("path",{d:"M14 3v6h6M8 13h8M8 17h5"}));
 const Plus         = p => h(Icon,p, h("path",{d:"M12 5v14M5 12h14"}));
 const X            = p => h(Icon,p, h("path",{d:"M18 6 6 18M6 6l12 12"}));
 const Check        = p => h(Icon,p, h("path",{d:"M20 6 9 17l-5-5"}));
@@ -213,6 +214,7 @@ function ControlePresenca(){
   const [tela,         setTela]         = useState("presenca");
   const [turnoAtivo,   setTurnoAtivo]   = useState("manha");
   const [busca,        setBusca]        = useState("");
+  const [rh,           setRh]           = useState(()=>LC.get("rh",[]));
   const [anchorDate,   setAnchorDate]   = useState(()=>new Date());
   const [showCadastro, setShowCadastro] = useState(false);
   const [editingColab, setEditingColab] = useState(null);
@@ -247,6 +249,8 @@ function ControlePresenca(){
     setBancoHoras(cb); setAlmocos(ca);
 
     const unsubs=[];
+
+    unsubs.push(fbListen("rh", docs=>{ setRh(docs); LC.set("rh",docs); }));
 
     unsubs.push(fbListen("colaboradores", docs=>{
       if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
@@ -432,6 +436,31 @@ function ControlePresenca(){
     finally{ setSalvando(false); }
   },[showToast]);
 
+  const handleImportRh=useCallback(async file=>{
+    try{
+      const buf=await file.arrayBuffer();
+      let txt; try{ txt=new TextDecoder("utf-8",{fatal:true}).decode(buf); }catch(e){ txt=new TextDecoder("windows-1252").decode(buf); }
+      const linhas=txt.split(/\r?\n/).filter(l=>l.trim());
+      const cab=linhas[0].split(";").map(x=>x.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim());
+      const ix=k=>cab.findIndex(c=>c.includes(k));
+      const iMat=ix("matric"),iNome=ix("nome"),iAdm=ix("admiss"),iCargo=ix("cargo"),iNasc=ix("nasc");
+      if(iMat<0||iNome<0||iAdm<0) throw new Error("Colunas Matricula, Nome e Data de admissão não encontradas");
+      const toISO=v=>{ const m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((v||"").trim()); return m?`${m[3]}-${pad2(+m[2])}-${pad2(+m[1])}`:""; };
+      const docs=[];
+      linhas.slice(1).forEach(l=>{
+        const c=l.split(";"); const mat=(c[iMat]||"").trim(); const adm=toISO(c[iAdm]);
+        if(!mat||!adm) return;
+        docs.push({id:mat,matricula:mat,nome:(c[iNome]||"").trim(),admissao:adm,cargo:iCargo>=0?(c[iCargo]||"").trim():"",nascimento:iNasc>=0?toISO(c[iNasc]):""});
+      });
+      if(docs.length===0) throw new Error("Nenhuma linha válida na planilha");
+      if(!window.confirm(`Importar ${docs.length} colaboradores? A lista atual de contratos será substituída pela planilha.`)) return;
+      setSalvando(true);
+      await fbSetAll("rh",docs);
+      showToast(`${docs.length} colaboradores importados`);
+    }catch(e){ showToast("Erro ao importar: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
   const handleSaveAlmoco=useCallback(async(colabId,data,saida,retorno)=>{
     const key=`${colabId}:${data}`;
     const next={...almocos};
@@ -519,6 +548,9 @@ function ControlePresenca(){
         ),
         h("button",{style:{...S.navTab,...(tela==="almoco"?S.navTabAtivo:{})},onClick:()=>setTela("almoco")},
           h(UtensilsCrossed,{size:14,color:tela==="almoco"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Almoço")
+        ),
+        h("button",{style:{...S.navTab,...(tela==="contratos"?S.navTabAtivo:{})},onClick:()=>setTela("contratos")},
+          h(FileText,{size:14,color:tela==="contratos"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Contratos")
         )
       ),
       tela==="presenca"&&h("div",{style:S.tabsRow},
@@ -612,6 +644,7 @@ function ControlePresenca(){
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
     }),
+    tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh}),
     tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
     showCadastro&&h(CadastroModal,{initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
@@ -1479,6 +1512,120 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
   );
 }
 
+// ====== CONTRATOS DE EXPERIÊNCIA (45 + 45 = 90 dias) ======
+// Contagem: o dia da admissão é o dia 1 → 45º dia = admissão + 44; 90º dia = admissão + 89
+function TelaContratos({ rh, onImportar }) {
+  const [filtro, setFiltro] = useState("exp");
+  const [q, setQ] = useState("");
+  const fileRef = useRef(null);
+
+  const hoje = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const parseISO = iso => { const [y,m,d] = (iso||"").split("-").map(Number); return new Date(y, (m||1)-1, d||1); };
+  const fmt = d => d ? `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}` : "";
+  const fmtIso = iso => iso ? fmt(parseISO(iso)) : "";
+  const dif = (a, b) => Math.round((a - b) / 86400000);
+  const norm = t => (t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+
+  const linhas = useMemo(() => rh.map(r => {
+    const adm = parseISO(r.admissao);
+    const fim45 = addDays(adm, 44), fim90 = addDays(adm, 89);
+    const d45 = dif(fim45, hoje), d90 = dif(fim90, hoje);
+    let fase, dias, alvo;
+    if (dif(adm, hoje) > 0)  { fase = "futuro"; dias = dif(adm, hoje); alvo = null; }
+    else if (d45 >= 0)       { fase = "1";      dias = d45; alvo = "45"; }
+    else if (d90 >= 0)       { fase = "2";      dias = d90; alvo = "90"; }
+    else                     { fase = "fora";   dias = null; alvo = null; }
+    return { ...r, adm, fim45, fim90, fase, dias, alvo, emExp: fase === "1" || fase === "2" };
+  }), [rh, hoje]);
+
+  const emExp = linhas.filter(l => l.emExp);
+  const cont = {
+    exp: emExp.length,
+    f1: emExp.filter(l => l.fase === "1").length,
+    f2: emExp.filter(l => l.fase === "2").length,
+    sem7: emExp.filter(l => l.dias <= 7).length,
+    todos: linhas.length,
+  };
+
+  const visiveis = useMemo(() => {
+    const t = norm(q.trim());
+    let l = linhas.filter(x => filtro === "todos" ? true : filtro === "7d" ? (x.emExp && x.dias <= 7) : x.emExp);
+    if (t) l = l.filter(x => norm(x.nome).includes(t) || norm(x.matricula).includes(t) || norm(x.cargo).includes(t));
+    return l.sort((a, b) => filtro === "todos"
+      ? a.nome.localeCompare(b.nome, "pt-BR")
+      : ((a.dias ?? 9999) - (b.dias ?? 9999)) || a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [linhas, filtro, q]);
+
+  const corDias = d => d <= 7 ? { bg:"#FDECEA", fg:"#B71C1C", bd:"#E57373" } : d <= 15 ? { bg:"#FFF3CD", fg:"#7A5200", bd:"#F5A300" } : { bg:"#E3F4EA", fg:"#0F5A34", bd:"#7CC79B" };
+  const situacao = l => {
+    if (l.fase === "futuro") return h("span", { style:{ color:"#6B6458", fontSize:11 } }, `Inicia em ${l.dias} d`);
+    if (l.fase === "fora")   return h("span", { style:{ color:"#8A8478", fontSize:11 } }, "Fora da experiência");
+    const c = corDias(l.dias);
+    return h("span", { style:{ background:c.bg, color:c.fg, border:`1.5px solid ${c.bd}`, borderRadius:8, padding:"3px 8px", fontSize:11, fontWeight:800, whiteSpace:"nowrap" } },
+      l.dias === 0 ? `Vence HOJE (${l.alvo}d)` : `Faltam ${l.dias} d p/ ${l.alvo} dias`);
+  };
+
+  const th = { padding:"8px 10px", fontSize:11, fontWeight:800, color:"#6B6458", textAlign:"left", background:"#F4F1EA", borderBottom:"2px solid #E8E3D8", whiteSpace:"nowrap", position:"relative" };
+  const td = { padding:"8px 10px", fontSize:12.5, color:"#2B2620", borderBottom:"1px solid #F0EBE0", whiteSpace:"nowrap" };
+  const chip = (id, label, n) => h("button", { key:id, onClick:()=>setFiltro(id), style:{
+      padding:"6px 12px", borderRadius:999, fontSize:12, fontWeight:filtro===id?800:600, cursor:"pointer", whiteSpace:"nowrap",
+      border:"1.5px solid "+(filtro===id?"#2B2620":"#E8E3D8"), background:filtro===id?"#2B2620":"#FFF", color:filtro===id?"#FAF8F4":"#5C5648" } },
+    `${label} (${n})`);
+  const card = (n, label, cor) => h("div", { style:{ flex:"1 1 120px", background:"#FFF", border:"1.5px solid #E8E3D8", borderLeft:`5px solid ${cor}`, borderRadius:10, padding:"8px 12px" } },
+    h("div", { style:{ fontSize:22, fontWeight:900, color:"#2B2620", lineHeight:1 } }, n),
+    h("div", { style:{ fontSize:11, color:"#6B6458", marginTop:3 } }, label));
+
+  return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
+    h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:10 } },
+      h("div", null,
+        h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Contratos de experiência"),
+        h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Término em 45 e 90 dias, contando o dia da admissão como dia 1")),
+      h("div", null,
+        h("input", { ref:fileRef, type:"file", accept:".csv,text/csv", style:{ display:"none" },
+          onChange:e=>{ const f=e.target.files&&e.target.files[0]; if(f) onImportar(f); e.target.value=""; } }),
+        h("button", { style:S.addBtn, onClick:()=>fileRef.current&&fileRef.current.click() }, h(FileText,{size:15,strokeWidth:2.2}), h("span",null,"Importar planilha (CSV)")))),
+
+    rh.length === 0
+      ? h("div", { style:S.emptyState },
+          h(FileText, { size:28, color:"#BDC3C7" }),
+          h("p", { style:S.emptyTitle }, "Nenhuma planilha importada"),
+          h("p", { style:{ fontSize:12, color:"#8A8478", textAlign:"center", maxWidth:300 } }, "Toque em “Importar planilha (CSV)” e escolha o arquivo de colaboradores ativos (colunas: Matrícula, Nome, Data de admissão, Descrição do cargo, Data de Nascimento)."))
+      : h("div", null,
+          h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 } },
+            card(cont.exp, "Em experiência", "#2E86DE"),
+            card(cont.f1, "1º período (até 45 d)", "#F5A300"),
+            card(cont.f2, "2º período (até 90 d)", "#8E44AD"),
+            card(cont.sem7, "Vencem em até 7 dias", "#D32F2F")),
+          h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 } },
+            chip("exp", "Em experiência", cont.exp), chip("7d", "Vencem em 7 dias", cont.sem7), chip("todos", "Todos", cont.todos),
+            h("div", { style:{ display:"flex", alignItems:"center", gap:6, flex:"1 1 160px", maxWidth:260, background:"#FFF", border:"1.5px solid #E8E3D8", borderRadius:999, padding:"4px 10px" } },
+              h(Search, { size:14, color:"#8A8478", strokeWidth:2.4 }),
+              h("input", { type:"search", value:q, placeholder:"Pesquisar", onChange:e=>setQ(e.target.value),
+                style:{ flex:1, minWidth:0, border:"none", outline:"none", background:"transparent", fontSize:13, fontFamily:"inherit", color:"#2B2620" } }))),
+          h("div", { style:{ overflowX:"auto", border:"1.5px solid #E8E3D8", borderRadius:12, background:"#FFF" } },
+            h("table", { style:{ borderCollapse:"separate", borderSpacing:0, width:"100%", minWidth:900 } },
+              h("thead", null, h("tr", null,
+                ["Matrícula","Nome","Data de admissão","Descrição do cargo","Data de nascimento","Término 45 dias","Término 90 dias","Situação"].map((t,i) =>
+                  h("th", { key:t, style:{ ...th, ...(i===1?{ position:"sticky", left:0, zIndex:2 }:{}) } }, t)))),
+              h("tbody", null,
+                visiveis.length === 0
+                  ? h("tr", null, h("td", { colSpan:8, style:{ ...td, textAlign:"center", color:"#8A8478", padding:"20px" } }, "Nenhum colaborador neste filtro"))
+                  : visiveis.map(l => {
+                      const dest = k => ({ fontWeight: l.alvo===k?900:500, background: l.alvo===k?(corDias(l.dias).bg):"transparent" });
+                      return h("tr", { key:l.id },
+                        h("td", { style:{ ...td, color:"#6B6458" } }, l.matricula),
+                        h("td", { style:{ ...td, fontWeight:700, position:"sticky", left:0, background:"#FFF", zIndex:1, boxShadow:"2px 0 4px rgba(0,0,0,0.05)" } }, l.nome),
+                        h("td", { style:td }, fmtIso(l.admissao)),
+                        h("td", { style:td }, l.cargo),
+                        h("td", { style:td }, fmtIso(l.nascimento)),
+                        h("td", { style:{ ...td, ...dest("45") } }, fmt(l.fim45)),
+                        h("td", { style:{ ...td, ...dest("90") } }, fmt(l.fim90)),
+                        h("td", { style:td }, situacao(l)));
+                    }))))
+        )
+  );
+}
+
 // ====== MODAL DE IMPRESSÃO ======
 function PrintModal({ colaboradores, presencas, tiposStatus, weekDays, onClose }) {
 
@@ -1667,7 +1814,7 @@ const S={
   iconBtn2:{width:32,height:32,borderRadius:8,border:"1px solid #3D2E10",background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center"},
   pendenteBadge:{fontSize:11,fontWeight:700,color:"#D68910",background:"#FEF9F0",border:"1px solid #F9A825",borderRadius:999,padding:"3px 8px"},
   salvandoBadge:{fontSize:11,fontWeight:700,color:"#2980B9",background:"#EBF5FB",border:"1px solid #3498DB",borderRadius:999,padding:"3px 8px"},
-  navTabs:{display:"flex",borderBottom:"2px solid #3D2E10",margin:"0",padding:"0 16px",background:"#1A1208"},
+  navTabs:{display:"flex",borderBottom:"2px solid #3D2E10",margin:"0",padding:"0 16px",background:"#1A1208",overflowX:"auto",whiteSpace:"nowrap"},
   navTab:{display:"flex",alignItems:"center",gap:6,padding:"10px 12px",fontSize:13,fontWeight:600,color:"#C9BC9A",border:"none",background:"transparent",borderBottom:"2px solid transparent",marginBottom:-2,cursor:"pointer"},
   navTabAtivo:{color:"#FF6D00",borderBottomColor:"#FF6D00",fontWeight:800},
   tabsRow:{display:"flex",gap:5,padding:"8px 12px",overflowX:"auto",alignItems:"center",background:"#F8F4EE",borderBottom:"1px solid #E8E0D0"},
