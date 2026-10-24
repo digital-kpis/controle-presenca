@@ -18,6 +18,24 @@
   #boot-loader{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1A1208;font-family:-apple-system,sans-serif}
   .dot{width:10px;height:10px;border-radius:50%;background:#FF6D00;animation:p 1.2s ease-in-out infinite}
   @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+  html{-webkit-text-size-adjust:100%}
+  body{padding-top:env(safe-area-inset-top);-webkit-tap-highlight-color:transparent}
+  button,input,select,textarea{touch-action:manipulation}
+  /* ===== Celular ===== */
+  @media (max-width:720px){
+    .tbl-wrap{padding:4px 6px 0!important}
+    .escala-table{min-width:0!important}
+    .th-name,.td-name{min-width:96px!important;max-width:106px!important;padding:8px 6px!important}
+    .name-cell{flex-direction:column!important;align-items:flex-start!important;gap:5px!important}
+    .name-actions{gap:6px!important}
+    .name-actions button{width:30px!important;height:30px!important;background:#F4F1EA!important;border-radius:8px!important}
+    .th-day{min-width:36px!important;padding:6px 0!important;font-size:11px!important}
+    .td-cell{padding:5px 1px!important}
+    .cell-btn{width:34px!important;height:40px!important;font-size:12px!important;border-radius:8px!important}
+    input,select,textarea{font-size:16px!important}
+    .hide-m{display:none!important}
+    .resumo-busca{flex:1 1 100%!important;max-width:none!important;order:3}
+  }
 </style>
 </head>
 <body>
@@ -38,7 +56,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
 
 <!-- App -->
-<script src="./app.jsx?v=20261023g"></script>
+<script src="./app.jsx?v=20261023h"></script>
 
 <!-- Service Worker (habilita instalação PWA) -->
 <script>

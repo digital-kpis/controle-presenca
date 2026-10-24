@@ -559,7 +559,7 @@ function ControlePresenca(){
           h("button",{style:S.iconBtn2,onClick:sincronizar,title:"Sincronizar"},h(RefreshCw,{size:16,color:"#C9BC9A",strokeWidth:2.2})),
           h("button",{style:S.iconBtn2,onClick:()=>setShowPrint(true),title:"Imprimir"},h(Printer,{size:16,color:"#C9BC9A",strokeWidth:2.2})),
           h("button",{style:S.addBtn,onClick:()=>{setEditingColab(null);setShowCadastro(true);}},
-            h(UserPlus,{size:15,strokeWidth:2.2}),h("span",null,"Cadastrar")
+            h(UserPlus,{size:15,strokeWidth:2.2}),h("span",{className:"hide-m"},"Cadastrar")
           )
         )
       ),
@@ -622,7 +622,7 @@ function ControlePresenca(){
           h(Settings,{size:12,strokeWidth:2.4}),h("span",null,"Gerenciar tipos")
         )
       ),
-      h("main",{style:S.tableWrap},
+      h("main",{className:"tbl-wrap",style:S.tableWrap},
         (isVisaoTodos?(buscando?gruposPorTurno.length===0:colaboradores.length===0):colaboradoresDoTurno.length===0)?
           h("div",{style:S.emptyState},
             h(Users,{size:28,color:"#BDC3C7"}),
@@ -633,12 +633,12 @@ function ControlePresenca(){
             )
           ):
           h("div",{style:S.scrollArea},
-            h("table",{style:S.table},
+            h("table",{className:"escala-table",style:S.table},
               h("thead",null,h("tr",null,
-                h("th",{style:S.thName},"Colaborador"),
+                h("th",{className:"th-name",style:S.thName},"Colaborador"),
                 ...weekDays.map(d=>{
                   const isToday=isoDate(d)===isoDate(new Date()),isSun=d.getDay()===0;
-                  return h("th",{key:d.toISOString(),style:{...S.thDay,...(isToday?S.thDayToday:{}),...(isSun&&!isToday?S.thDaySunday:{})}},
+                  return h("th",{key:d.toISOString(),className:"th-day",style:{...S.thDay,...(isToday?S.thDayToday:{}),...(isSun&&!isToday?S.thDaySunday:{})}},
                     h("div",{style:{fontSize:10,fontWeight:700,letterSpacing:"0.04em"}},WEEKDAY_LABELS[d.getDay()]),
                     h("div",{style:{fontSize:13,fontWeight:800,marginTop:2}},`${pad2(d.getDate())}/${pad2(d.getMonth()+1)}`)
                   );
@@ -804,13 +804,13 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
 // ====== LINHA DA TABELA ======
 function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStatusInfo){
   return h("tr",{key:colab.id,style:index%2===1?{background:"#FBFAF7"}:undefined},
-    h("td",{style:S.tdName},
-      h("div",{style:S.nameCell},
+    h("td",{className:"td-name",style:S.tdName},
+      h("div",{className:"name-cell",style:S.nameCell},
         h("div",null,
           h("div",{style:S.nameText},colab.nome),
           h("div",{style:S.nameMeta},`${colab.matricula} · ${colab.funcao}`)
         ),
-        h("div",{style:S.nameActions},
+        h("div",{className:"name-actions",style:S.nameActions},
           h("button",{style:S.iconBtn,onClick:onEdit},h(Pencil,{size:13})),
           h("button",{style:{...S.iconBtn,color:"#C0392B"},onClick:onDelete},h(Trash2,{size:13}))
         )
@@ -820,8 +820,9 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
       const dateIso=isoDate(d),key=`${colab.id}:${dateIso}`;
       const status=presencas[key]||"vazio",s=getStatusInfo(status);
       const isToday=dateIso===isoDate(new Date()),marcado=status!=="vazio";
-      return h("td",{key,style:S.tdCell},
+      return h("td",{key,className:"td-cell",style:S.tdCell},
         h("button",{
+          className:"cell-btn",
           onClick:()=>onCycle(colab.id,dateIso,colab.nome),
           title: marcado?s.label:"Clique para marcar",
           style:{
@@ -1287,7 +1288,7 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
   return h("div", { style: S.resumoWrap },
     h("div", { style: S.resumoHeader },
       h("span", { style: S.resumoTitulo }, `Resumo de hoje — ${dataFmt}`),
-      h("div", { style: { display:"flex", alignItems:"center", gap:6, flex:"1 1 180px", maxWidth:300, minWidth:150,
+      h("div", { className:"resumo-busca", style: { display:"flex", alignItems:"center", gap:6, flex:"1 1 180px", maxWidth:300, minWidth:150,
           background:"rgba(255,255,255,0.10)", border:"1.5px solid "+(busca?"#FF6D00":"rgba(255,255,255,0.18)"),
           borderRadius:999, padding:"4px 10px" } },
         h(Search, { size:14, color:"#C9BC9A", strokeWidth:2.4 }),
