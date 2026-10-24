@@ -21,6 +21,7 @@
   html{-webkit-text-size-adjust:100%}
   body{padding-top:env(safe-area-inset-top);-webkit-tap-highlight-color:transparent}
   button,input,select,textarea{touch-action:manipulation}
+  input:focus,select:focus,textarea:focus{border-color:#FF6D00!important;box-shadow:0 0 0 3px rgba(255,109,0,.2)!important;outline:none}
   /* ===== Celular ===== */
   @media (max-width:720px){
     .tbl-wrap{padding:4px 6px 0!important}
@@ -56,7 +57,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
 
 <!-- App -->
-<script src="./app.jsx?v=20261023h"></script>
+<script src="./app.jsx?v=20261023i"></script>
 
 <!-- Service Worker (habilita instalação PWA) -->
 <script>
