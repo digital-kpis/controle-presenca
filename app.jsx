@@ -1557,6 +1557,12 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
   const [filtro, setFiltro] = useState("exp");
   const [q, setQ] = useState("");
   const fileRef = useRef(null);
+  const [mobile, setMobile] = useState(() => window.innerWidth < 720);
+  useEffect(() => {
+    const f = () => setMobile(window.innerWidth < 720);
+    window.addEventListener("resize", f);
+    return () => window.removeEventListener("resize", f);
+  }, []);
 
   const hoje = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const parseISO = iso => { const [y,m,d] = (iso||"").split("-").map(Number); return new Date(y, (m||1)-1, d||1); };
@@ -1642,7 +1648,30 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
               h(Search, { size:14, color:"#8A8478", strokeWidth:2.4 }),
               h("input", { type:"search", value:q, placeholder:"Pesquisar", onChange:e=>setQ(e.target.value),
                 style:{ flex:1, minWidth:0, border:"none", outline:"none", background:"transparent", fontSize:13, fontFamily:"inherit", color:"#2B2620" } }))),
-          h("div", { style:{ overflowX:"auto", border:"1.5px solid #E8E3D8", borderRadius:12, background:"#FFF" } },
+          mobile
+          ? h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+              visiveis.length === 0
+                ? h("div", { style:{ textAlign:"center", color:"#8A8478", padding:20, fontSize:13 } }, "Nenhum colaborador neste filtro")
+                : visiveis.map(l => {
+                    const campo = (rot, val, destaque) => h("div", { style:{ minWidth:0, padding:"6px 8px", borderRadius:8, background: destaque ? corDias(l.dias).bg : "#FAF8F4" } },
+                      h("div", { style:{ fontSize:10, color:"#8A8478", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" } }, rot),
+                      h("div", { style:{ fontSize:13, color:"#2B2620", fontWeight: destaque ? 900 : 600 } }, val || "—"));
+                    return h("div", { key:l.id, style:{ background:"#FFF", border:"1.5px solid #E8E3D8", borderRadius:12, padding:"10px 12px" } },
+                      h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 } },
+                        h("div", { style:{ minWidth:0 } },
+                          h("div", { style:{ fontSize:14, fontWeight:800, color:"#2B2620", lineHeight:1.2 } }, l.nome),
+                          h("div", { style:{ fontSize:11, color:"#8A8478", marginTop:2 } }, `${l.matricula} · ${l.cargo || "—"}`)),
+                        h("button", { "aria-label":"Editar "+l.nome, onClick:()=>setEdit(l),
+                          style:{ flexShrink:0, width:38, height:38, borderRadius:10, border:"none", background:"#F4F1EA", color:"#5C5648", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" } },
+                          h(Pencil, { size:18 }))),
+                      h("div", { style:{ margin:"8px 0" } }, situacao(l)),
+                      h("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 } },
+                        campo("Admissão", fmtIso(l.admissao)),
+                        campo("Aniversário", fmtIso(l.nascimento)),
+                        campo("Término 45 dias", fmt(l.fim45), l.alvo === "45"),
+                        campo("Término 90 dias", fmt(l.fim90), l.alvo === "90")));
+                  }))
+          : h("div", { style:{ overflowX:"auto", border:"1.5px solid #E8E3D8", borderRadius:12, background:"#FFF" } },
             h("table", { style:{ borderCollapse:"separate", borderSpacing:0, width:"100%", minWidth:900 } },
               h("thead", null, h("tr", null,
                 ["Matrícula","Nome","Data de admissão","Descrição do cargo","Data de nascimento","Término 45 dias","Término 90 dias","Situação",""].map((t,i) =>
