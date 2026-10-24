@@ -663,7 +663,7 @@ function ControlePresenca(){
     ),
 
     tela==="bancohoras"&&h(TelaBancoHoras,{colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
-      onNovo:()=>{setEditingLanc(null);setShowLanc(true);},
+      onNovo:colabId=>{setEditingLanc(colabId?{colab_id:colabId}:null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
@@ -876,7 +876,7 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
       h("div",{style:S.bhSaldosList},
         colabsFiltrados.map(c=>{
           const min=saldosPorColab[c.id]||0,{txt,color,bg}=fmtSaldo(min),ativo=bhFiltro===c.id;
-          return h("button",{key:c.id,style:{...S.bhSaldoCard,...(ativo?{background:"#2B2620",borderColor:"#2B2620"}:{})},onClick:()=>setBhFiltro(ativo?null:c.id)},
+          return h("button",{key:c.id,style:{...S.bhSaldoCard,...(ativo?{background:"#2B2620",borderColor:"#2B2620"}:{})},onClick:()=>{setBhFiltro(c.id);onNovo(c.id);}},
             h("div",{style:{...S.bhSaldoNome,...(ativo?{color:"#FAF8F4"}:{})}},c.nome),
             h("div",{style:{...S.bhSaldoMeta,...(ativo?{color:"#C9C3B8"}:{})}},c.funcao+" · "+(TURNOS.find(t=>t.id===c.turno)?.label||"")),
             h("div",{style:{fontSize:14,fontWeight:900,background:ativo?"rgba(255,255,255,0.12)":bg,color:ativo?(min===0?"#C9C3B8":min>0?"#8FD4A8":"#F4A198"):color,borderRadius:8,padding:"3px 8px",marginTop:4}},txt)
@@ -893,7 +893,7 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
         h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
           h("button",{style:{padding:"8px 12px",borderRadius:10,border:"1.5px solid "+(modoSel?"#2B2620":"#E8E3D8"),background:modoSel?"#2B2620":"#FFF",color:modoSel?"#FAF8F4":"#5C5648",fontSize:12.5,fontWeight:700,cursor:"pointer"},
             onClick:()=>modoSel?sairSel():setModoSel(true)},modoSel?"Cancelar":"Selecionar"),
-          h("button",{style:S.addBtn,onClick:onNovo},h(Plus,{size:15,strokeWidth:2.5}),h("span",null,"Lançar horas"))
+          h("button",{style:S.addBtn,onClick:()=>onNovo(bhFiltro||null)},h(Plus,{size:15,strokeWidth:2.5}),h("span",null,"Lançar horas"))
         )
       ),
       // Barra de ações em lote
@@ -965,8 +965,8 @@ function LancamentoModal({initial,colaboradores,onClose,onSave}){
   const isEdit=Boolean(initial&&initial.id);
   const [colabId,setColabId]=useState(initial?.colab_id||"");
   const [data,setData]=useState(initial?.data||isoDate(new Date()));
-  const [tipo,setTipo]=useState(initial?(initial.minutos>0?"credito":"debito"):"credito");
-  const [horas,setHoras]=useState(initial?minParaHora(Math.abs(initial.minutos)):"01:00");
+  const [tipo,setTipo]=useState(initial?.minutos!=null?(initial.minutos>0?"credito":"debito"):"credito");
+  const [horas,setHoras]=useState(initial?.minutos!=null?minParaHora(Math.abs(initial.minutos)):"01:00");
   const [descricao,setDescricao]=useState(initial?.descricao||"");
   const [error,setError]=useState("");
   const submit=()=>{
