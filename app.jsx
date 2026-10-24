@@ -827,15 +827,15 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
           style:{
             ...S.cellBtn,
             background: isToday&&!marcado?"#FFF8DC":marcado?s.color:"#FFFFFF",
-            borderColor: isToday?"#2B2620":marcado?s.color:"#E8E3D8",
-            borderWidth: isToday||marcado?2:1,
-            color: marcado?"#FFFFFF":isToday?"#2B2620":"#BDC3C7",
+            borderColor: isToday?"#2B2620":marcado?s.color:"#CFC5B1",
+            borderWidth: 2.5,
+            color: marcado?"#FFFFFF":isToday?"#2B2620":"#9C9586",
             fontWeight: marcado?900:600,
             boxShadow: isToday&&marcado?`0 0 0 2px #FFF, 0 0 0 4px #2B2620`:marcado?`0 2px 8px ${s.color}66`:"none",
             position:"relative",
           }
         },
-          marcado ? s.short : h("span",{style:{fontSize:16,opacity:.3}},"+")
+          marcado ? s.short : h("span",{style:{fontSize:18,opacity:.45,fontWeight:700}},"+")
         )
       );
     })
@@ -1968,18 +1968,18 @@ const S={
   scrollArea:{overflowX:"auto",borderRadius:12,border:"1px solid #EFEBE2",background:"#FFF"},
   table:{borderCollapse:"collapse",width:"100%",minWidth:580},
   thName:{textAlign:"left",fontSize:10,fontWeight:700,color:"#5C5648",textTransform:"uppercase",letterSpacing:"0.05em",padding:"9px 12px",position:"sticky",left:0,background:"#F0EBE0",borderBottom:"2px solid #D8CDB8",minWidth:180,zIndex:2},
-  thDay:{textAlign:"center",padding:"7px 3px",borderBottom:"2px solid #D8CDB8",borderLeft:"1px solid #E8E0D0",color:"#3D3028",fontWeight:700,minWidth:52},
+  thDay:{textAlign:"center",padding:"8px 4px",borderBottom:"3px solid #D8CDB8",borderLeft:"1.5px solid #E3DBCB",color:"#3D3028",fontWeight:700,minWidth:52},
   thDayToday:{background:"#FFF3C4",borderBottomColor:"#2B2620"},
   thDaySunday:{background:"#FBFAF7"},
-  tdName:{padding:"7px 12px",borderBottom:"1px solid #F4F1EA",position:"sticky",left:0,backgroundColor:"#FFF",zIndex:1},
+  tdName:{padding:"9px 12px",borderBottom:"2px solid #D9CFBC",position:"sticky",left:0,backgroundColor:"#FFF",zIndex:1},
   nameCell:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6},
-  nameText:{fontSize:12.5,fontWeight:600,color:"#2B2620"},
+  nameText:{fontSize:13,fontWeight:700,color:"#2B2620"},
   nameMeta:{fontSize:10,color:"#9C9586",marginTop:1},
   nameActions:{display:"flex",gap:3,flexShrink:0},
   iconBtn:{width:22,height:22,borderRadius:6,border:"none",background:"transparent",color:"#9C9586",display:"flex",alignItems:"center",justifyContent:"center"},
-  tdCell:{padding:"5px 3px",borderBottom:"1px solid #F4F1EA",borderLeft:"1px solid #F4F1EA",textAlign:"center"},
-  cellBtn:{width:38,height:32,borderRadius:8,border:"2px solid",fontSize:11.5,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all 0.12s",letterSpacing:"-0.3px"},
-  groupHeaderCell:{padding:"8px 12px",background:"#F4F1EA",borderTop:"1px solid #EFEBE2",borderBottom:"1px solid #EFEBE2",borderLeft:"3px solid",position:"sticky",left:0},
+  tdCell:{padding:"7px 4px",borderBottom:"2px solid #D9CFBC",borderLeft:"1.5px solid #E3DBCB",textAlign:"center"},
+  cellBtn:{width:44,height:38,borderRadius:9,border:"2px solid",fontSize:13,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all 0.12s",letterSpacing:"-0.3px"},
+  groupHeaderCell:{padding:"8px 12px",background:"#F4F1EA",borderTop:"2px solid #D9CFBC",borderBottom:"2px solid #D9CFBC",borderLeft:"5px solid",position:"sticky",left:0},
   groupHeaderDot:{display:"inline-block",width:7,height:7,borderRadius:"50%",marginRight:7},
   groupHeaderText:{fontSize:12,fontWeight:800,color:"#2B2620"},
   groupHeaderHorario:{fontSize:10.5,color:"#9C9586",marginLeft:7},
