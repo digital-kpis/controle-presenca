@@ -215,6 +215,11 @@ function ControlePresenca(){
   const [turnoAtivo,   setTurnoAtivo]   = useState("manha");
   const [busca,        setBusca]        = useState("");
   const [rh,           setRh]           = useState(()=>LC.get("rh",[]));
+  const anivMap = useMemo(()=>{
+    const hj=new Date(); hj.setHours(0,0,0,0);
+    const o={}; rh.forEach(r=>{ const i=infoAniversario(r.nascimento,hj); if(i) o[r.matricula]=i; });
+    return o;
+  },[rh]);
   const [anchorDate,   setAnchorDate]   = useState(()=>new Date());
   const [showCadastro, setShowCadastro] = useState(false);
   const [editingColab, setEditingColab] = useState(null);
@@ -597,7 +602,7 @@ function ControlePresenca(){
     ),
 
     tela==="presenca"&&h("div",null,
-      h(ResumoDia,{colaboradores,presencas,tiposStatus,dataRef:isoDate(new Date()),busca,setBusca}),
+      h(ResumoDia,{colaboradores,presencas,tiposStatus,dataRef:isoDate(new Date()),busca,setBusca,rh}),
       h("div",{style:S.subbar},
         h("div",{style:S.turnoChip},
           h("span",{style:{...S.turnoChipDot,background:turnoInfo.cor}}),
@@ -653,10 +658,10 @@ function ControlePresenca(){
                     h("span",{style:S.groupHeaderCount},`${grupo.items.length} pessoas`)
                   )),
                   ...grupo.items.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
-                    ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo))
+                    ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo,anivMap[c.matricula]))
                 )):
                 h("tbody",null,...colaboradoresDoTurno.map((c,i)=>rowColab(c,i,weekDays,presencas,openModalStatus,
-                  ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo)))
+                  ()=>{setEditingColab(c);setShowCadastro(true);},()=>setConfirmDelColab(c),getStatusInfo,anivMap[c.matricula])))
             )
           )
       )
@@ -801,14 +806,27 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
   );
 }
 
+// ====== ANIVERSÁRIO (data de nascimento vem da aba Contratos) ======
+function infoAniversario(nascIso, hoje) {
+  if (!nascIso) return null;
+  const [y, m, d] = nascIso.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  let prox = new Date(hoje.getFullYear(), m - 1, d);
+  if (prox < hoje) prox = new Date(hoje.getFullYear() + 1, m - 1, d);
+  return { dias: Math.round((prox - hoje) / 86400000), dia: d, mes: m, idade: prox.getFullYear() - y };
+}
+
 // ====== LINHA DA TABELA ======
-function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStatusInfo){
+function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStatusInfo,aniv){
   return h("tr",{key:colab.id,style:index%2===1?{background:"#FBFAF7"}:undefined},
-    h("td",{className:"td-name",style:S.tdName},
+    h("td",{className:"td-name",style:aniv&&aniv.dias===0?{...S.tdName,background:"#FFE3EE"}:S.tdName},
       h("div",{className:"name-cell",style:S.nameCell},
         h("div",null,
           h("div",{style:S.nameText},colab.nome),
-          h("div",{style:S.nameMeta},`${colab.matricula} · ${colab.funcao}`)
+          h("div",{style:S.nameMeta},`${colab.matricula} · ${colab.funcao}`),
+          aniv&&aniv.dias<=1&&h("div",{style:{display:"inline-block",marginTop:3,padding:"2px 7px",borderRadius:999,fontSize:10.5,fontWeight:900,
+            background:aniv.dias===0?"#D81B60":"#FCE4EC",color:aniv.dias===0?"#FFF":"#AD1457",border:"1.5px solid #D81B60"}},
+            aniv.dias===0?`🎂 Aniversário hoje! (${aniv.idade} anos)`:"🎂 Amanhã")
         ),
         h("div",{className:"name-actions",style:S.nameActions},
           h("button",{style:S.iconBtn,onClick:onEdit},h(Pencil,{size:13})),
@@ -1244,7 +1262,7 @@ function TipoForm({initial,onClose,onSave}){
 }
 
 // ====== RESUMO DO DIA ======
-function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setBusca }) {
+function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setBusca, rh }) {
   const hoje = isoDate(new Date());
 
   // Conta por status para HOJE
@@ -1284,6 +1302,14 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
     }).filter(t => t.total > 0);
   }, [colaboradores, presencas, hoje]);
   const totalPresentes = porHorario.reduce((n, t) => n + t.pres, 0);
+
+  // Aniversariantes (hoje e próximos 7 dias) — datas vêm da aba Contratos
+  const aniversarios = useMemo(() => {
+    const hj = new Date(); hj.setHours(0,0,0,0);
+    const curto = n => { const p=(n||"").trim().split(/\s+/); const c=x=>x.charAt(0).toUpperCase()+x.slice(1).toLowerCase(); return p.length<=2?p.map(c).join(" "):c(p[0])+" "+c(p[p.length-1]); };
+    const l = (rh||[]).map(r => ({ nome:curto(r.nome), i:infoAniversario(r.nascimento, hj) })).filter(x => x.i && x.i.dias <= 7);
+    return { hoje:l.filter(x=>x.i.dias===0), prox:l.filter(x=>x.i.dias>0).sort((a,b)=>a.i.dias-b.i.dias) };
+  }, [rh]);
 
   return h("div", { style: S.resumoWrap },
     h("div", { style: S.resumoHeader },
@@ -1339,6 +1365,12 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
           h("div", { style: { fontSize: 10, color: "#8A8478", lineHeight: 1, marginTop: 1 } }, "Sem marcação")
         )
       )
+    ),
+
+    // Aniversariantes
+    (aniversarios.hoje.length > 0 || aniversarios.prox.length > 0) && h("div", { style: { marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.12)", fontSize: 12, color: "#FAF8F4", lineHeight: 1.5 } },
+      aniversarios.hoje.length > 0 && h("div", null, h("span", { style:{ fontWeight:900, color:"#FF80AB" } }, "🎂 Aniversariantes de hoje: "), aniversarios.hoje.map(x => `${x.nome} (${x.i.idade} anos)`).join(", ")),
+      aniversarios.prox.length > 0 && h("div", { style:{ color:"#C9BC9A", fontSize:11.5 } }, "Próximos 7 dias: ", aniversarios.prox.map(x => `${x.nome} (${pad2(x.i.dia)}/${pad2(x.i.mes)})`).join(", "))
     ),
 
     // Presentes por horário
@@ -1581,7 +1613,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
     else if (d45 >= 0)       { fase = "1";      dias = d45; alvo = "45"; }
     else if (d90 >= 0)       { fase = "2";      dias = d90; alvo = "90"; }
     else                     { fase = "fora";   dias = null; alvo = null; }
-    return { ...r, adm, fim45, fim90, fase, dias, alvo, emExp: fase === "1" || fase === "2" };
+    return { ...r, adm, fim45, fim90, fase, dias, alvo, aniv: infoAniversario(r.nascimento, hoje), emExp: fase === "1" || fase === "2" };
   }), [rh, hoje]);
 
   const emExp = linhas.filter(l => l.emExp);
@@ -1591,13 +1623,14 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
     f2: emExp.filter(l => l.fase === "2").length,
     sem7: emExp.filter(l => l.dias <= 7).length,
     todos: linhas.length,
+    aniv: linhas.filter(l => l.aniv && l.aniv.mes === hoje.getMonth()+1).length,
   };
 
   const visiveis = useMemo(() => {
     const t = norm(q.trim());
-    let l = linhas.filter(x => filtro === "todos" ? true : filtro === "7d" ? (x.emExp && x.dias <= 7) : x.emExp);
+    let l = linhas.filter(x => filtro === "todos" ? true : filtro === "aniv" ? (x.aniv && x.aniv.mes === hoje.getMonth()+1) : filtro === "7d" ? (x.emExp && x.dias <= 7) : x.emExp);
     if (t) l = l.filter(x => norm(x.nome).includes(t) || norm(x.matricula).includes(t) || norm(x.cargo).includes(t));
-    return l.sort((a, b) => filtro === "todos"
+    return l.sort((a, b) => filtro === "aniv" ? (a.aniv.dia - b.aniv.dia) || a.nome.localeCompare(b.nome, "pt-BR") : filtro === "todos"
       ? a.nome.localeCompare(b.nome, "pt-BR")
       : ((a.dias ?? 9999) - (b.dias ?? 9999)) || a.nome.localeCompare(b.nome, "pt-BR"));
   }, [linhas, filtro, q]);
@@ -1611,6 +1644,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
       l.dias === 0 ? `Vence HOJE (${l.alvo}d)` : `Faltam ${l.dias} d p/ ${l.alvo} dias`);
   };
 
+  const anivTxt = l => !l.nascimento ? "" : l.aniv && l.aniv.dias === 0 ? `🎂 HOJE · ${fmtIso(l.nascimento)}` : l.aniv && l.aniv.dias <= 7 ? `🎂 em ${l.aniv.dias} d · ${fmtIso(l.nascimento)}` : fmtIso(l.nascimento);
   const th = { padding:"8px 10px", fontSize:11, fontWeight:800, color:"#6B6458", textAlign:"left", background:"#F4F1EA", borderBottom:"2px solid #CFC5B1", whiteSpace:"nowrap", position:"relative" };
   const td = { padding:"8px 10px", fontSize:12.5, color:"#2B2620", borderBottom:"2px solid #D9CFBC", whiteSpace:"nowrap" };
   const chip = (id, label, n) => h("button", { key:id, onClick:()=>setFiltro(id), style:{
@@ -1644,7 +1678,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
             card(cont.f2, "2º período (até 90 d)", "#8E44AD"),
             card(cont.sem7, "Vencem em até 7 dias", "#D32F2F")),
           h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 } },
-            chip("exp", "Em experiência", cont.exp), chip("7d", "Vencem em 7 dias", cont.sem7), chip("todos", "Todos", cont.todos),
+            chip("exp", "Em experiência", cont.exp), chip("7d", "Vencem em 7 dias", cont.sem7), chip("aniv", "🎂 Aniversariantes do mês", cont.aniv), chip("todos", "Todos", cont.todos),
             h("div", { style:{ display:"flex", alignItems:"center", gap:6, flex:"1 1 160px", maxWidth:260, background:"#FFF", border:"2px solid #BFB4A0", borderRadius:999, padding:"4px 10px" } },
               h(Search, { size:14, color:"#8A8478", strokeWidth:2.4 }),
               h("input", { type:"search", value:q, placeholder:"Pesquisar", onChange:e=>setQ(e.target.value),
@@ -1654,10 +1688,10 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
               visiveis.length === 0
                 ? h("div", { style:{ textAlign:"center", color:"#8A8478", padding:20, fontSize:13 } }, "Nenhum colaborador neste filtro")
                 : visiveis.map(l => {
-                    const campo = (rot, val, destaque) => h("div", { style:{ minWidth:0, padding:"6px 8px", borderRadius:8, background: destaque ? corDias(l.dias).bg : "#FAF8F4" } },
+                    const campo = (rot, val, destaque) => h("div", { style:{ minWidth:0, padding:"6px 8px", borderRadius:8, background: typeof destaque === "string" ? destaque : destaque ? corDias(l.dias).bg : "#FAF8F4" } },
                       h("div", { style:{ fontSize:10, color:"#8A8478", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.03em" } }, rot),
                       h("div", { style:{ fontSize:13, color:"#2B2620", fontWeight: destaque ? 900 : 600 } }, val || "—"));
-                    return h("div", { key:l.id, style:{ background:"#FFF", border:"2px solid #BFB4A0", borderRadius:12, padding:"10px 12px" } },
+                    return h("div", { key:l.id, style:{ background:"#FFF", border:"2px solid "+(l.aniv && l.aniv.dias===0 ? "#D81B60" : "#BFB4A0"), borderRadius:12, padding:"10px 12px" } },
                       h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 } },
                         h("div", { style:{ minWidth:0 } },
                           h("div", { style:{ fontSize:14, fontWeight:800, color:"#2B2620", lineHeight:1.2 } }, l.nome),
@@ -1668,7 +1702,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
                       h("div", { style:{ margin:"8px 0" } }, situacao(l)),
                       h("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 } },
                         campo("Admissão", fmtIso(l.admissao)),
-                        campo("Aniversário", fmtIso(l.nascimento)),
+                        campo("Aniversário", anivTxt(l), l.aniv && l.aniv.dias === 0 ? "#FFE3EE" : null),
                         campo("Término 45 dias", fmt(l.fim45), l.alvo === "45"),
                         campo("Término 90 dias", fmt(l.fim90), l.alvo === "90")));
                   }))
@@ -1687,7 +1721,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
                         h("td", { style:{ ...td, fontWeight:700, position:"sticky", left:0, background:"#FFF", zIndex:1, boxShadow:"2px 0 4px rgba(0,0,0,0.05)" } }, l.nome),
                         h("td", { style:td }, fmtIso(l.admissao)),
                         h("td", { style:td }, l.cargo),
-                        h("td", { style:td }, fmtIso(l.nascimento)),
+                        h("td", { style:{ ...td, ...(l.aniv && l.aniv.dias===0 ? { background:"#FFE3EE", fontWeight:900, color:"#AD1457" } : {}) } }, anivTxt(l)),
                         h("td", { style:{ ...td, ...dest("45") } }, fmt(l.fim45)),
                         h("td", { style:{ ...td, ...dest("90") } }, fmt(l.fim90)),
                         h("td", { style:td }, situacao(l)),
