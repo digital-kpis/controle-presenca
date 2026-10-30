@@ -215,6 +215,7 @@ function ControlePresenca(){
   const [turnoAtivo,   setTurnoAtivo]   = useState("manha");
   const [busca,        setBusca]        = useState("");
   const [rh,           setRh]           = useState(()=>LC.get("rh",[]));
+  const [relatorioBH,   setRelatorioBH]   = useState(()=>LC.get("bhRel",[]));
   const anivMap = useMemo(()=>{
     const hj=new Date(); hj.setHours(0,0,0,0);
     const o={}; rh.forEach(r=>{ const i=infoAniversario(r.nascimento,hj); if(i) o[r.matricula]=i; });
@@ -256,6 +257,7 @@ function ControlePresenca(){
     const unsubs=[];
 
     unsubs.push(fbListen("rh", docs=>{ setRh(docs); LC.set("rh",docs); }));
+    unsubs.push(fbListen("bhRelatorio", docs=>{ setRelatorioBH(docs); LC.set("bhRel",docs); }));
 
     unsubs.push(fbListen("colaboradores", docs=>{
       if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
@@ -386,6 +388,25 @@ function ControlePresenca(){
     finally{ setSalvando(false); }
     setShowCadastro(false); setEditingColab(null);
   },[colaboradores,tiposStatus,gerarFolgas,showToast,rh]);
+
+  const handleSalvarRelatorioBH=useCallback(async docs=>{
+    setSalvando(true);
+    try{ await fbSetAll("bhRelatorio",docs); showToast(`Relatório guardado (${docs.length} operadores)`); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleAjustarBH=useCallback(async(ajustes,dataIso)=>{
+    setSalvando(true);
+    try{
+      const [y,m,d]=dataIso.split("-");
+      const base=Date.now();
+      await Promise.all(ajustes.map((a,i)=>{ const id=`bhaj${base}_${i}`;
+        return fbSet("bancoHoras",id,{id,colab_id:a.colab_id,data:dataIso,minutos:a.minutos,descricao:`Ajuste — relatório de saldos ${d}/${m}/${y}`}); }));
+      showToast(`${ajustes.length} ajustes lançados`);
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
 
   const handleSaveRh=useCallback(async row=>{
     setSalvando(true);
@@ -667,7 +688,7 @@ function ControlePresenca(){
       )
     ),
 
-    tela==="bancohoras"&&h(TelaBancoHoras,{colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
+    tela==="bancohoras"&&h(TelaBancoHoras,{relatorioBH,onSalvarRelatorio:handleSalvarRelatorioBH,onAjustar:handleAjustarBH,toast:showToast,colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
       onNovo:colabId=>{setEditingLanc(colabId?{colab_id:colabId}:null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
@@ -862,7 +883,38 @@ function rowColab(colab,index,weekDays,presencas,onCycle,onEdit,onDelete,getStat
 }
 
 // ====== TELA BANCO DE HORAS ======
-function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,onNovo,onEditar,onDeletar,onDeletarVarios}){
+function TelaBancoHoras({relatorioBH,onSalvarRelatorio,onAjustar,toast,colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,onNovo,onEditar,onDeletar,onDeletarVarios}){
+  const fileRelRef=useRef(null);
+  const [impDados,setImpDados]=useState(null);
+  const relMap=useMemo(()=>{ const o={}; (relatorioBH||[]).forEach(r=>{ o[r.matricula]=r; }); return o; },[relatorioBH]);
+
+  // Lê o relatório "Saldos a vencer do banco de horas" (xlsx/csv): Colaborador ("matrícula - NOME"), Cargo, SaldoAtual (HH:MM)
+  const lerRelatorio=async file=>{
+    try{
+      if(!window.XLSX) throw new Error("Leitor de planilhas não carregou. Confira a internet e recarregue o app.");
+      const wb=XLSX.read(await file.arrayBuffer(),{type:"array"});
+      const linhas=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:""});
+      const nz=t=>(t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+      const hi=linhas.findIndex(l=>l.some(c=>nz(c).includes("colaborador")));
+      if(hi<0) throw new Error("Coluna \"Colaborador\" não encontrada");
+      const cab=linhas[hi].map(nz);
+      const iCol=cab.findIndex(c=>c.includes("colaborador")), iCargo=cab.findIndex(c=>c.includes("cargo")), iSaldo=cab.findIndex(c=>c.includes("saldo"));
+      if(iSaldo<0) throw new Error("Coluna de saldo não encontrada");
+      const rows=[];
+      linhas.slice(hi+1).forEach(l=>{
+        const txt=(l[iCol]||"").toString().trim(); if(!txt) return;
+        const m=/^(\d+)\s*-\s*(.+)$/.exec(txt);
+        const v=l[iSaldo]; let min=null;
+        if(typeof v==="number") min=Math.round(v*1440);
+        else { const t=/^(-?)(\d+):(\d{2})$/.exec((v||"").toString().trim()); if(t) min=(t[1]?-1:1)*(+t[2]*60+ +t[3]); }
+        if(min===null) return;
+        rows.push({matricula:m?m[1]:"",nome:(m?m[2]:txt).trim(),cargo:iCargo>=0?(l[iCargo]||"").toString().trim():"",min});
+      });
+      if(rows.length===0) throw new Error("Nenhuma linha de saldo encontrada");
+      const fd=/(\d{2})(\d{2})(20\d{2})/.exec(file.name);
+      setImpDados({rows,arquivo:file.name,dataIso:fd?`${fd[3]}-${fd[2]}-${fd[1]}`:isoDate(new Date())});
+    }catch(e){ toast("Erro ao ler: "+e.message,true); }
+  };
   const [confirmDel,setConfirmDel]=useState(null);
   const [modoSel,setModoSel]=useState(false);
   const [selIds,setSelIds]=useState([]);
@@ -883,7 +935,13 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
   return h("div",{style:S.bhWrap},
     h("div",{style:S.bhSaldosSection},
       h("div",{style:S.bhSaldosHeader},
-        h("span",{style:S.bhSaldosTitle},"Saldo por colaborador"),
+        h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+          h("span",{style:S.bhSaldosTitle},"Saldo por colaborador"),
+          h("input",{ref:fileRelRef,type:"file",accept:".xlsx,.xls,.csv",style:{display:"none"},
+            onChange:e=>{const f=e.target.files&&e.target.files[0]; if(f) lerRelatorio(f); e.target.value="";}}),
+          h("button",{style:{padding:"6px 10px",borderRadius:9,border:"2px solid #2B2620",background:"#FFF",color:"#2B2620",fontSize:12,fontWeight:800,cursor:"pointer"},
+            onClick:()=>fileRelRef.current&&fileRelRef.current.click()},"📥 Importar relatório de saldos")
+        ),
         h("div",{style:{display:"flex",gap:4,flexWrap:"wrap"}},
           h("button",{style:{...S.bhFiltroBtn,...(filtroTurno==="todos"?S.bhFiltroBtnTodos:{})},onClick:()=>setFiltroTurno("todos")},"Todos"),
           ...TURNOS.map(t=>h("button",{key:t.id,
@@ -898,7 +956,9 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
           return h("button",{key:c.id,style:{...S.bhSaldoCard,...(ativo?{background:"#2B2620",borderColor:"#2B2620"}:{})},onClick:()=>{setBhFiltro(c.id);onNovo(c.id);}},
             h("div",{style:{...S.bhSaldoNome,...(ativo?{color:"#FAF8F4"}:{})}},c.nome),
             h("div",{style:{...S.bhSaldoMeta,...(ativo?{color:"#C9C3B8"}:{})}},c.funcao+" · "+(TURNOS.find(t=>t.id===c.turno)?.label||"")),
-            h("div",{style:{fontSize:14,fontWeight:900,background:ativo?"rgba(255,255,255,0.12)":bg,color:ativo?(min===0?"#C9C3B8":min>0?"#8FD4A8":"#F4A198"):color,borderRadius:8,padding:"3px 8px",marginTop:4}},txt)
+            h("div",{style:{fontSize:14,fontWeight:900,background:ativo?"rgba(255,255,255,0.12)":bg,color:ativo?(min===0?"#C9C3B8":min>0?"#8FD4A8":"#F4A198"):color,borderRadius:8,padding:"3px 8px",marginTop:4}},txt),
+            relMap[c.matricula]&&h("div",{style:{fontSize:10.5,marginTop:3,fontWeight:700,color:ativo?"#C9C3B8":(relMap[c.matricula].min===min?"#6B6458":"#B71C1C")}},
+              `Relatório: ${relMap[c.matricula].min<0?"-":""}${minParaHora(relMap[c.matricula].min)}${relMap[c.matricula].min===min?"":" ≠"}`)
           );
         })
       )
@@ -956,6 +1016,9 @@ function TelaBancoHoras({colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhF
           })
         )
     ),
+    impDados&&h(ImportBHModal,{dados:impDados,colaboradores,saldosPorColab,onClose:()=>setImpDados(null),
+      onSalvar:async(docs)=>{await onSalvarRelatorio(docs);setImpDados(null);},
+      onAjustar:async(ajustes,docs,dataIso)=>{await onSalvarRelatorio(docs);await onAjustar(ajustes,dataIso);setImpDados(null);}}),
     confirmMulti&&h("div",{style:S.modalOverlay,onClick:()=>setConfirmMulti(null)},
       h("div",{style:S.confirmCard,onClick:e=>e.stopPropagation()},
         h("p",{style:S.confirmTitle},confirmMulti.titulo),
@@ -1782,6 +1845,54 @@ function ContratoModal({ initial, rh, onClose, onSave, onDelete }) {
             isEdit && h("button", { style:{ ...S.btnGhost, color:"#B71C1C", borderColor:"#E57373" }, onClick:()=>setConfirmDel(true) }, "Excluir"),
             h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
             h("button", { style:S.btnPrimary, onClick:submit }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
+}
+
+// ====== IMPORTAÇÃO DO RELATÓRIO DE SALDOS (BANCO DE HORAS) ======
+function ImportBHModal({ dados, colaboradores, saldosPorColab, onClose, onSalvar, onAjustar }) {
+  const nz = t => (t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+  const [y, m, d] = dados.dataIso.split("-");
+  const linhas = useMemo(() => {
+    const byMat = {}, byNome = {};
+    colaboradores.forEach(c => { if (c.matricula) byMat[c.matricula] = c; byNome[nz(c.nome)] = c; });
+    return dados.rows.map(r => {
+      const c = byMat[r.matricula] || byNome[nz(r.nome)];
+      const app = c ? (saldosPorColab[c.id] || 0) : null;
+      return { ...r, c, app, dif: c ? r.min - app : null };
+    });
+  }, [dados, colaboradores, saldosPorColab]);
+  const achados = linhas.filter(l => l.c);
+  const sem = linhas.filter(l => !l.c);
+  const diferentes = achados.filter(l => l.dif !== 0);
+  const hhmm = v => `${v < 0 ? "-" : ""}${minParaHora(v)}`;
+  const docs = () => linhas.filter(l => l.matricula || l.c).map(l => { const mat = l.matricula || l.c.matricula; return { id: mat, matricula: mat, nome: l.nome, cargo: l.cargo, min: l.min, data: dados.dataIso }; });
+  const cel = { padding:"6px 8px", fontSize:12.5, borderBottom:"1.5px solid #E3DBCB", whiteSpace:"nowrap" };
+
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:{ ...S.modalCard, maxWidth:640 }, onClick:e=>e.stopPropagation() },
+      h("div", { style:S.modalHeader },
+        h("h2", { style:S.modalTitle }, "Importar saldos do relatório"),
+        h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:12, color:"#6B6458", margin:"0 0 8px" } }, `${dados.arquivo} · data do relatório ${d}/${m}/${y}`),
+      h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10, fontSize:12, fontWeight:700 } },
+        h("span", { style:{ background:"#E3F4EA", color:"#0F5A34", borderRadius:8, padding:"4px 8px" } }, `${achados.length} operadores lidos`),
+        h("span", { style:{ background:diferentes.length?"#FFF3CD":"#E3F4EA", color:diferentes.length?"#7A5200":"#0F5A34", borderRadius:8, padding:"4px 8px" } }, `${diferentes.length} com diferença`),
+        sem.length > 0 && h("span", { style:{ background:"#FDECEA", color:"#B71C1C", borderRadius:8, padding:"4px 8px" } }, `${sem.length} sem cadastro`)),
+      h("div", { style:{ maxHeight:"44vh", overflow:"auto", border:"2px solid #BFB4A0", borderRadius:10, background:"#FFF" } },
+        h("table", { style:{ borderCollapse:"collapse", width:"100%" } },
+          h("thead", null, h("tr", null, ["Operador","No app","Relatório","Diferença"].map(t => h("th", { key:t, style:{ ...cel, background:"#F4F1EA", textAlign:t==="Operador"?"left":"right", fontWeight:800, position:"sticky", top:0 } }, t)))),
+          h("tbody", null, linhas.map((l, i) => h("tr", { key:i, style:{ background: !l.c ? "#FFF5F4" : l.dif ? "#FFFBEA" : "transparent" } },
+            h("td", { style:{ ...cel, fontWeight:700, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" } }, l.nome, !l.c && h("span", { style:{ color:"#B71C1C", fontSize:10.5, marginLeft:6 } }, "sem cadastro")),
+            h("td", { style:{ ...cel, textAlign:"right", color:"#6B6458" } }, l.c ? hhmm(l.app) : "—"),
+            h("td", { style:{ ...cel, textAlign:"right", fontWeight:800, color:l.min<0?"#B71C1C":l.min>0?"#0F5A34":"#6B6458" } }, hhmm(l.min)),
+            h("td", { style:{ ...cel, textAlign:"right", fontWeight:800, color:!l.c?"#8A8478":l.dif===0?"#8A8478":l.dif>0?"#0F5A34":"#B71C1C" } }, !l.c ? "—" : l.dif === 0 ? "ok" : (l.dif > 0 ? "+" : "") + hhmm(l.dif))))))),
+      h("p", { style:{ fontSize:11.5, color:"#6B6458", margin:"10px 0 4px", lineHeight:1.4 } },
+        "“Guardar relatório” só registra os saldos do relatório (aparecem em cada operador, sem mexer nos lançamentos). “Guardar e ajustar” também cria um lançamento de ajuste por operador para o saldo do app ficar igual ao relatório."),
+      h("div", { style:S.modalActions },
+        h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+        h("button", { style:S.btnGhost, onClick:()=>onSalvar(docs()) }, "Guardar relatório"),
+        h("button", { style:S.btnPrimary, disabled:diferentes.length===0,
+          onClick:()=>{ if (window.confirm(`Lançar ${diferentes.length} ajustes para igualar o saldo do app ao relatório de ${d}/${m}/${y}?`)) onAjustar(diferentes.map(l => ({ colab_id:l.c.id, minutos:l.dif })), docs(), dados.dataIso); } },
+          `Guardar e ajustar (${diferentes.length})`))));
 }
 
 // ====== MODAL DE IMPRESSÃO ======
