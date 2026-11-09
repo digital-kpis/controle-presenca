@@ -7,6 +7,7 @@ function Icon({ children, size=16, strokeWidth=2, color="currentColor", style })
 }
 const Search       = p => h(Icon,p, h("circle",{cx:11,cy:11,r:7}), h("path",{d:"M21 21l-4.3-4.3"}));
 const FileText     = p => h(Icon,p, h("path",{d:"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"}), h("path",{d:"M14 3v6h6M8 13h8M8 17h5"}));
+const Sun          = p => h(Icon,p, h("circle",{cx:12,cy:12,r:4}), h("path",{d:"M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"}));
 const Plus         = p => h(Icon,p, h("path",{d:"M12 5v14M5 12h14"}));
 const X            = p => h(Icon,p, h("path",{d:"M18 6 6 18M6 6l12 12"}));
 const Check        = p => h(Icon,p, h("path",{d:"M20 6 9 17l-5-5"}));
@@ -216,6 +217,7 @@ function ControlePresenca(){
   const [busca,        setBusca]        = useState("");
   const [rh,           setRh]           = useState(()=>LC.get("rh",[]));
   const [relatorioBH,   setRelatorioBH]   = useState(()=>LC.get("bhRel",[]));
+  const [ferias,        setFerias]        = useState(()=>LC.get("ferias",[]));
   const anivMap = useMemo(()=>{
     const hj=new Date(); hj.setHours(0,0,0,0);
     const o={}; rh.forEach(r=>{ const i=infoAniversario(r.nascimento,hj); if(i) o[r.matricula]=i; });
@@ -258,6 +260,7 @@ function ControlePresenca(){
 
     unsubs.push(fbListen("rh", docs=>{ setRh(docs); LC.set("rh",docs); }));
     unsubs.push(fbListen("bhRelatorio", docs=>{ setRelatorioBH(docs); LC.set("bhRel",docs); }));
+    unsubs.push(fbListen("ferias", docs=>{ setFerias(docs); LC.set("ferias",docs); }));
 
     unsubs.push(fbListen("colaboradores", docs=>{
       if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
@@ -407,6 +410,34 @@ function ControlePresenca(){
     }catch(e){ showToast("Erro: "+e.message,true); }
     finally{ setSalvando(false); }
   },[showToast]);
+
+  const handleSaveFerias=useCallback(async d=>{
+    setSalvando(true);
+    try{ await fbSet("ferias",d.id,d); showToast("Férias salvas"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleDelFerias=useCallback(async id=>{
+    setSalvando(true);
+    try{ await fbDel("ferias",id); showToast("Agendamento excluído"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleQuitarFerias=useCallback(async(l,k)=>{
+    setSalvando(true);
+    try{
+      const docs=[];
+      for(let n=1;n<=k;n++){
+        const ja=ferias.filter(f=>f.matricula===l.matricula&&f.periodo===n).reduce((t,f)=>t+(f.dias||0),0);
+        if(ja<30) docs.push({id:`q_${l.matricula}_${n}`,matricula:l.matricula,nome:l.nome,periodo:n,quitado:true,dias:30-ja});
+      }
+      await Promise.all(docs.map(d=>fbSet("ferias",d.id,d)));
+      showToast(docs.length?`${docs.length} período(s) marcado(s) como gozado(s)`:"Nada a marcar");
+    }catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast,ferias]);
 
   const handleSaveRh=useCallback(async row=>{
     setSalvando(true);
@@ -601,6 +632,9 @@ function ControlePresenca(){
         ),
         h("button",{style:{...S.navTab,...(tela==="contratos"?S.navTabAtivo:{})},onClick:()=>setTela("contratos")},
           h(FileText,{size:14,color:tela==="contratos"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Contratos")
+        ),
+        h("button",{style:{...S.navTab,...(tela==="ferias"?S.navTabAtivo:{})},onClick:()=>setTela("ferias")},
+          h(Sun,{size:14,color:tela==="ferias"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Férias")
         )
       ),
       tela==="presenca"&&h("div",{style:S.tabsRow},
@@ -694,6 +728,7 @@ function ControlePresenca(){
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
     }),
+    tela==="ferias"&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
     tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
     tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
@@ -1845,6 +1880,269 @@ function ContratoModal({ initial, rh, onClose, onSave, onDelete }) {
             isEdit && h("button", { style:{ ...S.btnGhost, color:"#B71C1C", borderColor:"#E57373" }, onClick:()=>setConfirmDel(true) }, "Excluir"),
             h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
             h("button", { style:S.btnPrimary, onClick:submit }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
+}
+
+// ====== FÉRIAS (período aquisitivo → direito → vencimento do período concessivo) ======
+const FV_MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const fvParse = iso => { const [y,m,d] = (iso||"").split("-").map(Number); return new Date(y, (m||1)-1, d||1); };
+const fvFmt = d => d ? `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}` : "";
+const fvDif = (a, b) => Math.round((a - b) / 86400000);
+function fvAddAnos(d, n) { const r = new Date(d.getFullYear()+n, d.getMonth(), d.getDate()); if (r.getMonth() !== d.getMonth()) r.setDate(0); return r; }
+// n-ésimo período: aquisitivo = 12 meses de trabalho; direito = dia seguinte; vencimento = último dia do período concessivo (mais 12 meses)
+function periodoFerias(adm, n) {
+  return { n, aqIni: fvAddAnos(adm, n-1), aqFim: addDays(fvAddAnos(adm, n), -1), direito: fvAddAnos(adm, n), venc: addDays(fvAddAnos(adm, n+1), -1) };
+}
+
+function TelaFerias({ rh, ferias, onSalvar, onExcluir, onQuitar }) {
+  const hoje = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const [ano, setAno] = useState(hoje.getFullYear());
+  const [mesSel, setMesSel] = useState(null);
+  const [filtro, setFiltro] = useState("todos");
+  const [q, setQ] = useState("");
+  const [limite, setLimite] = useState(() => LC.get("feriasLimite", 3));
+  const [modal, setModal] = useState(null);
+  const [quitar, setQuitar] = useState(null);
+  const [mobile, setMobile] = useState(() => window.innerWidth < 720);
+  useEffect(() => { const f = () => setMobile(window.innerWidth < 720); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
+  const norm = t => (t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+
+  const lista = ferias || [];
+  const comDatas = useMemo(() => lista.filter(f => f.inicio && f.fim), [lista]);
+  const porMat = useMemo(() => { const o = {}; lista.forEach(f => { (o[f.matricula] = o[f.matricula] || []).push(f); }); return o; }, [lista]);
+  const diasPeriodo = (mat, n) => (porMat[mat] || []).filter(f => f.periodo === n).reduce((s, f) => s + (f.dias || 0), 0);
+
+  const linhas = useMemo(() => (rh || []).filter(r => r.admissao).map(r => {
+    const adm = fvParse(r.admissao);
+    let n = 1; while (n < 60 && diasPeriodo(r.matricula, n) >= 30) n++;
+    const p = periodoFerias(adm, n);
+    const dVenc = fvDif(p.venc, hoje), dDireito = fvDif(p.direito, hoje);
+    const docs = (porMat[r.matricula] || []).slice().sort((a, b) => (a.inicio || "").localeCompare(b.inicio || ""));
+    const agDias = docs.filter(f => f.periodo === n && f.inicio).reduce((s, f) => s + (f.dias || 0), 0);
+    const quitados = docs.filter(f => f.quitado).map(f => f.periodo).sort((a, b) => a - b);
+    const passados = (() => { let k = 0; while (k < 60 && fvDif(periodoFerias(adm, k+1).direito, hoje) <= 0) k++; return k; })();
+    let st;
+    if (dDireito > 0)      st = { k:"aquisicao", t:`Em aquisição · direito em ${fvFmt(p.direito)}`, bg:"#E3F0FB", fg:"#0D47A1", bd:"#90CAF9" };
+    else if (dVenc < 0)    st = { k:"vencida",   t:`VENCIDAS há ${-dVenc} d`, bg:"#FDECEA", fg:"#B71C1C", bd:"#E57373" };
+    else if (dVenc <= 90)  st = { k:"vence",     t:`Vence em ${dVenc} d`, bg: dVenc <= 30 ? "#FDECEA" : "#FFF3CD", fg: dVenc <= 30 ? "#B71C1C" : "#7A5200", bd: dVenc <= 30 ? "#E57373" : "#F5A300" };
+    else                   st = { k:"ok",        t:`No prazo · ${dVenc} d`, bg:"#E3F4EA", fg:"#0F5A34", bd:"#7CC79B" };
+    return { ...r, adm, n, p, dVenc, st, docs, agDias, quitados, passados, nome: r.nome };
+  }), [rh, porMat, hoje]);
+
+  const cont = {
+    venc: linhas.filter(l => l.st.k === "vencida").length,
+    prox: linhas.filter(l => l.st.k === "vence").length,
+    sem: linhas.filter(l => l.st.k !== "aquisicao" && l.agDias === 0).length,
+    ag: linhas.filter(l => l.agDias > 0).length,
+  };
+
+  const visiveis = useMemo(() => {
+    const t = norm(q.trim());
+    let l = linhas.filter(x => filtro === "todos" ? true : filtro === "venc" ? (x.st.k === "vencida" || x.st.k === "vence") : filtro === "sem" ? (x.st.k !== "aquisicao" && x.agDias === 0) : x.agDias > 0);
+    if (t) l = l.filter(x => norm(x.nome).includes(t) || norm(x.matricula).includes(t));
+    return l.sort((a, b) => a.dVenc - b.dVenc || a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [linhas, filtro, q]);
+
+  // calendário anual: dia → conjunto de operadores de férias
+  const heat = useMemo(() => {
+    const m = {};
+    comDatas.forEach(f => {
+      let d = fvParse(f.inicio); const fim = fvParse(f.fim);
+      if (fvDif(fim, d) > 400) return;
+      while (d <= fim) { if (d.getFullYear() === ano) { const k = isoDate(d); (m[k] = m[k] || new Set()).add(f.matricula); } d = addDays(d, 1); }
+    });
+    return m;
+  }, [comDatas, ano]);
+
+  const meses = useMemo(() => FV_MESES.map((nome, i) => {
+    const nDias = new Date(ano, i+1, 0).getDate(), set = new Set(); let pico = 0, picoDia = null;
+    for (let d = 1; d <= nDias; d++) {
+      const s = heat[`${ano}-${pad2(i+1)}-${pad2(d)}`];
+      if (s) { s.forEach(x => set.add(x)); if (s.size > pico) { pico = s.size; picoDia = d; } }
+    }
+    return { i, nome, nDias, total: set.size, pico, picoDia, offset: new Date(ano, i, 1).getDay() };
+  }), [heat, ano]);
+
+  const corDia = n => n === 0 ? "#F4F1EA" : n > limite ? "#D32F2F" : n === 1 ? "#BBDEFB" : n === 2 ? "#64B5F6" : n === 3 ? "#1E88E5" : "#0D47A1";
+  const nomeDe = mat => { const r = (rh || []).find(x => x.matricula === mat); return r ? r.nome : mat; };
+  const curto = n => { const p = (n||"").trim().split(/\s+/); const c = x => x.charAt(0).toUpperCase()+x.slice(1).toLowerCase(); return p.length <= 2 ? p.map(c).join(" ") : c(p[0])+" "+c(p[p.length-1]); };
+
+  const doMes = mesSel === null ? [] : comDatas.filter(f => {
+    const ini = fvParse(f.inicio), fim = fvParse(f.fim), a = new Date(ano, mesSel, 1), b = new Date(ano, mesSel+1, 0);
+    return ini <= b && fim >= a;
+  }).sort((a, b) => a.inicio.localeCompare(b.inicio));
+
+  const chip = (id, label, n) => h("button", { key:id, onClick:()=>setFiltro(id), style:{ padding:"6px 12px", borderRadius:999, fontSize:12, fontWeight:filtro===id?800:600, cursor:"pointer", whiteSpace:"nowrap",
+      border:"2px solid "+(filtro===id?"#2B2620":"#BFB4A0"), background:filtro===id?"#2B2620":"#FFF", color:filtro===id?"#FAF8F4":"#5C5648" } }, `${label} (${n})`);
+  const card = (n, label, cor) => h("div", { style:{ flex:"1 1 120px", background:"#FFF", border:"2px solid #BFB4A0", borderLeft:`5px solid ${cor}`, borderRadius:10, padding:"8px 12px" } },
+    h("div", { style:{ fontSize:22, fontWeight:900, color:"#2B2620", lineHeight:1 } }, n),
+    h("div", { style:{ fontSize:11, color:"#6B6458", marginTop:3 } }, label));
+  const badge = st => h("span", { style:{ background:st.bg, color:st.fg, border:`1.5px solid ${st.bd}`, borderRadius:8, padding:"3px 8px", fontSize:11, fontWeight:800, whiteSpace:"nowrap" } }, st.t);
+  const chipFerias = (l, f) => h("button", { key:f.id, onClick:()=>setModal({ l, f }),
+    style:{ border:"1.5px solid #90CAF9", background:"#E3F0FB", color:"#0D47A1", borderRadius:8, padding:"2px 7px", fontSize:11, fontWeight:700, cursor:"pointer", marginRight:4, marginBottom:3, whiteSpace:"nowrap" } },
+    f.quitado ? `Período ${f.periodo} · já gozado` : `${fvFmt(fvParse(f.inicio))} → ${fvFmt(fvParse(f.fim))} (${f.dias} d)`);
+  const acoes = l => h("div", { style:{ display:"flex", gap:6, flexWrap:"wrap" } },
+    h("button", { onClick:()=>setModal({ l }), style:{ padding:"6px 10px", borderRadius:8, border:"none", background:"#2B2620", color:"#FAF8F4", fontSize:12, fontWeight:800, cursor:"pointer" } }, "Agendar"),
+    l.passados > 0 && h("button", { onClick:()=>setQuitar(l), style:{ padding:"6px 10px", borderRadius:8, border:"2px solid #BFB4A0", background:"#FFF", color:"#5C5648", fontSize:12, fontWeight:700, cursor:"pointer" } }, "Já gozadas"));
+
+  const th = { padding:"8px 10px", fontSize:11, fontWeight:800, color:"#6B6458", textAlign:"left", background:"#F4F1EA", borderBottom:"2px solid #BFB4A0", whiteSpace:"nowrap" };
+  const td = { padding:"8px 10px", fontSize:12.5, color:"#2B2620", borderBottom:"2px solid #D9CFBC", verticalAlign:"top" };
+
+  return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
+    h("div", { style:{ marginBottom:10 } },
+      h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Férias"),
+      h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Datas calculadas pela admissão (aba Contratos): 12 meses de trabalho dão direito a 30 dias, e as férias precisam ser gozadas nos 12 meses seguintes.")),
+
+    (rh || []).length === 0
+      ? h("div", { style:S.emptyState }, h("p", { style:S.emptyTitle }, "Nenhum colaborador na aba Contratos"), h("p", { style:{ fontSize:12, color:"#8A8478", textAlign:"center", maxWidth:300 } }, "Importe a planilha na aba Contratos para calcular os vencimentos de férias."))
+      : h("div", null,
+          h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 } },
+            card(cont.venc, "Férias vencidas", "#D32F2F"), card(cont.prox, "Vencem em até 90 dias", "#F5A300"),
+            card(cont.sem, "Com direito, sem agendamento", "#2E86DE"), card(cont.ag, "Com férias agendadas", "#2E9E5B")),
+
+          // Calendário anual
+          h("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap", marginBottom:8 } },
+            h("div", { style:{ display:"flex", alignItems:"center", gap:6 } },
+              h("button", { "aria-label":"Ano anterior", onClick:()=>{ setAno(ano-1); setMesSel(null); }, style:{ width:34, height:34, borderRadius:9, border:"2px solid #BFB4A0", background:"#FFF", fontSize:16, fontWeight:900, cursor:"pointer" } }, "‹"),
+              h("span", { style:{ fontSize:17, fontWeight:900, color:"#2B2620", minWidth:56, textAlign:"center" } }, ano),
+              h("button", { "aria-label":"Próximo ano", onClick:()=>{ setAno(ano+1); setMesSel(null); }, style:{ width:34, height:34, borderRadius:9, border:"2px solid #BFB4A0", background:"#FFF", fontSize:16, fontWeight:900, cursor:"pointer" } }, "›")),
+            h("label", { style:{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#5C5648", fontWeight:700 } }, "Máx. de operadores de férias ao mesmo tempo",
+              h("input", { type:"number", min:1, max:30, value:limite, style:{ width:56, padding:"5px 6px", borderRadius:8, border:"2px solid #BFB4A0", fontSize:14, fontWeight:800, textAlign:"center", fontFamily:"inherit" },
+                onChange:e=>{ const v = Math.max(1, Math.min(30, parseInt(e.target.value||"1", 10) || 1)); setLimite(v); LC.set("feriasLimite", v); } }))),
+
+          h("div", { style:{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:8, marginBottom:8 } },
+            meses.map(m => h("button", { key:m.i, onClick:()=>setMesSel(mesSel === m.i ? null : m.i), style:{
+                textAlign:"left", cursor:"pointer", background:"#FFF", padding:"8px 8px 6px", borderRadius:12, fontFamily:"inherit",
+                border:"2px solid "+(m.pico > limite ? "#D32F2F" : mesSel === m.i ? "#2B2620" : "#BFB4A0"), boxShadow: mesSel === m.i ? "0 0 0 2px #2B2620" : "none" } },
+              h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"baseline" } },
+                h("span", { style:{ fontSize:12.5, fontWeight:800, color:"#2B2620" } }, m.nome),
+                h("span", { style:{ fontSize:18, fontWeight:900, color:m.total ? (m.pico > limite ? "#B71C1C" : "#0D47A1") : "#BDB6A8", lineHeight:1 } }, m.total)),
+              h("div", { style:{ fontSize:10, color:"#8A8478", marginBottom:4 } }, m.total === 0 ? "ninguém de férias" : `${m.total} operador${m.total > 1 ? "es" : ""} · pico ${m.pico} (dia ${m.picoDia})`),
+              h("div", { style:{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:1.5 } },
+                Array.from({ length:m.offset }, (_, k) => h("span", { key:"o"+k })),
+                Array.from({ length:m.nDias }, (_, k) => { const d = k+1, n = (heat[`${ano}-${pad2(m.i+1)}-${pad2(d)}`] || { size:0 }).size;
+                  return h("span", { key:d, style:{ fontSize:7.5, lineHeight:"12px", textAlign:"center", borderRadius:2, background:corDia(n), color:n >= 3 || n > limite ? "#FFF" : "#6B6458", fontWeight:n ? 800 : 500 } }, d); })))))
+          ,
+          h("div", { style:{ display:"flex", gap:10, flexWrap:"wrap", fontSize:10.5, color:"#6B6458", marginBottom:10, alignItems:"center" } },
+            "Operadores no dia:",
+            [[0,"0"],[1,"1"],[2,"2"],[3,"3"],[4,"4+"]].map(([n, t]) => h("span", { key:n, style:{ display:"inline-flex", alignItems:"center", gap:4 } }, h("span", { style:{ width:12, height:12, borderRadius:3, background:corDia(n), border:"1px solid #D9CFBC", display:"inline-block" } }), t)),
+            h("span", { style:{ display:"inline-flex", alignItems:"center", gap:4 } }, h("span", { style:{ width:12, height:12, borderRadius:3, background:"#D32F2F", display:"inline-block" } }), `acima do limite (${limite})`)),
+
+          mesSel !== null && h("div", { style:{ background:"#FFF", border:"2px solid #2B2620", borderRadius:12, padding:"10px 12px", marginBottom:12 } },
+            h("div", { style:{ fontSize:13, fontWeight:800, marginBottom:6 } }, `${FV_MESES[mesSel]} de ${ano} — ${doMes.length === 0 ? "nenhuma férias" : doMes.length + " agendamento" + (doMes.length > 1 ? "s" : "")}`),
+            doMes.map(f => { const l = linhas.find(x => x.matricula === f.matricula);
+              return h("div", { key:f.id, style:{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, padding:"6px 0", borderTop:"1.5px solid #E3DBCB" } },
+                h("div", { style:{ minWidth:0 } }, h("div", { style:{ fontSize:13, fontWeight:700 } }, curto(nomeDe(f.matricula))), h("div", { style:{ fontSize:11.5, color:"#6B6458" } }, `${fvFmt(fvParse(f.inicio))} → ${fvFmt(fvParse(f.fim))} · ${f.dias} dias`)),
+                l && h("button", { onClick:()=>setModal({ l, f }), "aria-label":"Editar férias", style:{ width:34, height:34, borderRadius:9, border:"none", background:"#F4F1EA", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" } }, h(Pencil, { size:16 }))); })),
+
+          // Lista de operadores
+          h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 } },
+            chip("todos", "Todos", linhas.length), chip("venc", "Vencidas / vencendo", cont.venc + cont.prox), chip("sem", "Sem agendamento", cont.sem), chip("ag", "Agendados", cont.ag),
+            h("div", { style:{ display:"flex", alignItems:"center", gap:6, flex:"1 1 160px", maxWidth:260, background:"#FFF", border:"2px solid #BFB4A0", borderRadius:999, padding:"4px 10px" } },
+              h(Search, { size:14, color:"#8A8478", strokeWidth:2.4 }),
+              h("input", { type:"search", value:q, placeholder:"Pesquisar", onChange:e=>setQ(e.target.value), style:{ flex:1, minWidth:0, border:"none", outline:"none", background:"transparent", fontSize:13, fontFamily:"inherit", color:"#2B2620" } }))),
+
+          mobile
+            ? h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+                visiveis.length === 0 ? h("div", { style:{ textAlign:"center", color:"#8A8478", padding:20, fontSize:13 } }, "Nenhum colaborador neste filtro")
+                : visiveis.map(l => h("div", { key:l.id, style:{ background:"#FFF", border:"2px solid #BFB4A0", borderRadius:12, padding:"10px 12px" } },
+                    h("div", { style:{ fontSize:14, fontWeight:800, color:"#2B2620", lineHeight:1.2 } }, l.nome),
+                    h("div", { style:{ fontSize:11, color:"#8A8478", marginTop:2 } }, `${l.matricula} · admissão ${fvFmt(l.adm)}`),
+                    h("div", { style:{ margin:"8px 0" } }, badge(l.st)),
+                    h("div", { style:{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:8 } },
+                      [["Período aquisitivo", `${fvFmt(l.p.aqIni)} – ${fvFmt(l.p.aqFim)}`], ["Direito a partir de", fvFmt(l.p.direito)], ["Vencimento", fvFmt(l.p.venc)], ["Agendado", `${l.agDias} de 30 dias`]].map(([r, v]) =>
+                        h("div", { key:r, style:{ padding:"6px 8px", borderRadius:8, background:"#FAF8F4" } }, h("div", { style:{ fontSize:10, color:"#8A8478", fontWeight:700, textTransform:"uppercase" } }, r), h("div", { style:{ fontSize:12.5, fontWeight:700 } }, v)))),
+                    l.docs.length > 0 && h("div", { style:{ marginBottom:6 } }, l.docs.map(f => chipFerias(l, f))),
+                    acoes(l))))
+            : h("div", { style:{ overflowX:"auto", border:"2px solid #BFB4A0", borderRadius:12, background:"#FFF" } },
+                h("table", { style:{ borderCollapse:"separate", borderSpacing:0, width:"100%", minWidth:980 } },
+                  h("thead", null, h("tr", null, ["Matrícula","Nome","Admissão","Período aquisitivo","Direito a partir de","Vencimento","Situação","Agendado",""].map(t => h("th", { key:t, style:th }, t)))),
+                  h("tbody", null, visiveis.length === 0 ? h("tr", null, h("td", { colSpan:9, style:{ ...td, textAlign:"center", color:"#8A8478", padding:20 } }, "Nenhum colaborador neste filtro"))
+                    : visiveis.map(l => h("tr", { key:l.id },
+                        h("td", { style:{ ...td, color:"#6B6458" } }, l.matricula),
+                        h("td", { style:{ ...td, fontWeight:700 } }, l.nome),
+                        h("td", { style:td }, fvFmt(l.adm)),
+                        h("td", { style:{ ...td, whiteSpace:"nowrap" } }, `${fvFmt(l.p.aqIni)} – ${fvFmt(l.p.aqFim)}`),
+                        h("td", { style:td }, fvFmt(l.p.direito)),
+                        h("td", { style:{ ...td, fontWeight:800 } }, fvFmt(l.p.venc)),
+                        h("td", { style:td }, badge(l.st)),
+                        h("td", { style:td }, h("div", { style:{ fontSize:11, color:"#6B6458", marginBottom:3 } }, `${l.agDias} de 30 dias`), l.docs.map(f => chipFerias(l, f))),
+                        h("td", { style:td }, acoes(l)))))))),
+
+    modal && h(FeriasModal, { l:modal.l, f:modal.f, comDatas, limite, nomeDe, onClose:()=>setModal(null),
+      onSave: async d => { await onSalvar(d); setModal(null); }, onDelete: async id => { await onExcluir(id); setModal(null); } }),
+    quitar && h(QuitarFeriasModal, { l:quitar, onClose:()=>setQuitar(null), onConfirm: async k => { await onQuitar(quitar, k); setQuitar(null); } })
+  );
+}
+
+function FeriasModal({ l, f, comDatas, limite, nomeDe, onClose, onSave, onDelete }) {
+  const isEdit = Boolean(f);
+  const [periodo, setPeriodo] = useState(f ? f.periodo : l.n);
+  const [inicio, setInicio] = useState(f ? f.inicio : "");
+  const [dias, setDias] = useState(f ? f.dias : 30);
+  const [error, setError] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+  const opcoes = []; for (let n = 1; n <= Math.max(l.n, f ? f.periodo : 1) + 1; n++) opcoes.push(n);
+  const p = periodoFerias(l.adm, periodo);
+  const fim = inicio && dias >= 1 ? isoDate(addDays(fvParse(inicio), dias - 1)) : "";
+  // conflito com outros operadores
+  const pico = useMemo(() => {
+    if (!inicio || !fim) return 0;
+    const outros = comDatas.filter(x => x.matricula !== l.matricula && x.id !== (f && f.id));
+    let d = fvParse(inicio), max = 0; const ate = fvParse(fim);
+    while (d <= ate) { const iso = isoDate(d); const s = new Set(); outros.forEach(x => { if (x.inicio <= iso && x.fim >= iso) s.add(x.matricula); }); max = Math.max(max, s.size); d = addDays(d, 1); }
+    return max;
+  }, [inicio, fim, comDatas]);
+  const jaNoPeriodo = comDatas.concat([]).filter(x => x.matricula === l.matricula && x.periodo === periodo && x.id !== (f && f.id)).reduce((s, x) => s + (x.dias || 0), 0);
+
+  const submit = () => {
+    if (!inicio) { setError("Informe a data de início."); return; }
+    if (!(dias >= 5 && dias <= 30)) { setError("Os dias devem ficar entre 5 e 30."); return; }
+    if (jaNoPeriodo + dias > 30) { setError(`Esse período já tem ${jaNoPeriodo} dias agendados; o total não pode passar de 30.`); return; }
+    onSave({ id: f ? f.id : `fe${Date.now()}`, matricula: l.matricula, nome: l.nome, periodo, inicio, fim, dias });
+  };
+
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:S.modalCard, onClick:e=>e.stopPropagation() },
+      h("div", { style:S.modalHeader }, h("h2", { style:S.modalTitle }, isEdit ? "Editar férias" : "Agendar férias"), h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:13, fontWeight:800, margin:"0 0 2px" } }, l.nome),
+      h("p", { style:{ fontSize:11.5, color:"#6B6458", margin:"0 0 10px" } }, `Admissão ${fvFmt(l.adm)} · vencimento do período ${periodo}: ${fvFmt(p.venc)}`),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Período aquisitivo"),
+        h("select", { style:S.input, value:periodo, onChange:e=>setPeriodo(parseInt(e.target.value, 10)) },
+          opcoes.map(n => { const pp = periodoFerias(l.adm, n); return h("option", { key:n, value:n }, `Período ${n} · ${fvFmt(pp.aqIni)} a ${fvFmt(pp.aqFim)}`); }))),
+      h("div", { style:{ display:"flex", gap:10, flexWrap:"wrap" } },
+        h("div", { style:{ ...S.formGroup, flex:"1 1 150px" } }, h("label", { style:S.label }, "Início das férias"), h("input", { type:"date", style:S.input, value:inicio, onChange:e=>setInicio(e.target.value) })),
+        h("div", { style:{ ...S.formGroup, flex:"1 1 110px" } }, h("label", { style:S.label }, "Dias"), h("input", { type:"number", min:5, max:30, style:S.input, value:dias, onChange:e=>setDias(parseInt(e.target.value || "0", 10) || 0) }))),
+      h("div", { style:{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8 } },
+        [30, 20, 15, 10, 5].map(n => h("button", { key:n, onClick:()=>setDias(n), style:{ padding:"5px 10px", borderRadius:999, border:"2px solid "+(dias === n ? "#2B2620" : "#BFB4A0"), background:dias === n ? "#2B2620" : "#FFF", color:dias === n ? "#FAF8F4" : "#5C5648", fontSize:12, fontWeight:700, cursor:"pointer" } }, `${n} dias`))),
+      fim && h("p", { style:{ fontSize:12.5, margin:"4px 0", fontWeight:700 } }, `Retorno ao trabalho: ${fvFmt(addDays(fvParse(fim), 1))} · último dia de férias: ${fvFmt(fvParse(fim))}`),
+      fim && fvParse(fim) > p.venc && h("p", { style:{ fontSize:12, color:"#B71C1C", fontWeight:700, margin:"4px 0" } }, "⚠ Termina depois do vencimento do período (pagamento em dobro)."),
+      fim && h("p", { style:{ fontSize:12, fontWeight:700, margin:"4px 0", color:pico + 1 > limite ? "#B71C1C" : "#0F5A34" } },
+        pico === 0 ? "✓ Ninguém mais de férias nessas datas." : `${pico + 1 > limite ? "⚠" : "✓"} Com este agendamento, até ${pico + 1} operadores de férias ao mesmo tempo (limite ${limite}).`),
+      h("p", { style:{ fontSize:11, color:"#8A8478", margin:"6px 0" } }, "As férias podem ser divididas em até 3 períodos (um com pelo menos 14 dias e os outros com pelo menos 5 dias)."),
+      error && h("p", { style:S.errorText }, error),
+      confirmDel
+        ? h("div", { style:S.modalActions }, h("span", { style:{ fontSize:12, color:"#B71C1C", fontWeight:700, flex:1 } }, "Excluir este agendamento?"),
+            h("button", { style:S.btnGhost, onClick:()=>setConfirmDel(false) }, "Não"), h("button", { style:S.btnDanger, onClick:()=>onDelete(f.id) }, "Excluir"))
+        : h("div", { style:S.modalActions },
+            isEdit && h("button", { style:{ ...S.btnGhost, color:"#B71C1C", borderColor:"#E57373" }, onClick:()=>setConfirmDel(true) }, "Excluir"),
+            h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+            h("button", { style:S.btnPrimary, onClick:submit }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
+}
+
+function QuitarFeriasModal({ l, onClose, onConfirm }) {
+  const [k, setK] = useState(l.passados);
+  const opc = []; for (let n = 1; n <= l.passados; n++) opc.push(n);
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:S.modalCard, onClick:e=>e.stopPropagation() },
+      h("div", { style:S.modalHeader }, h("h2", { style:S.modalTitle }, "Férias já gozadas"), h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:13, fontWeight:800, margin:"0 0 6px" } }, l.nome),
+      h("p", { style:{ fontSize:12, color:"#6B6458", margin:"0 0 10px", lineHeight:1.4 } }, "Use para o histórico: marca períodos anteriores como já gozados, sem datas, para o vencimento passar para o período seguinte."),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Marcar como gozados os períodos até o nº"),
+        h("select", { style:S.input, value:k, onChange:e=>setK(parseInt(e.target.value, 10)) },
+          opc.map(n => { const pp = periodoFerias(l.adm, n); return h("option", { key:n, value:n }, `Período ${n} (${fvFmt(pp.aqIni)} a ${fvFmt(pp.aqFim)})`); }))),
+      h("div", { style:S.modalActions },
+        h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+        h("button", { style:S.btnPrimary, onClick:()=>onConfirm(k) }, h(Check, { size:15, strokeWidth:2.5 }), "Confirmar"))));
 }
 
 // ====== IMPORTAÇÃO DO RELATÓRIO DE SALDOS (BANCO DE HORAS) ======
