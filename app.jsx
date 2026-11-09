@@ -862,6 +862,55 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
   );
 }
 
+// ====== RELATÓRIOS RESUMIDOS PARA IMPRESSÃO (A4) ======
+const BTN_IMPRIMIR = { padding:"6px 10px", borderRadius:9, border:"2px solid #2B2620", background:"#FFF", color:"#2B2620", fontSize:12, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" };
+
+// cards: [{valor, rotulo}] · secoes: [{titulo, nota?, colunas:[...], linhas:[[cel,...]], rodape?:[...]}]
+// cel = texto/número ou { t, b?, cor?, bg? }
+function imprimirResumo({ titulo, subtitulo, cards = [], secoes = [] }) {
+  const esc = v => String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const ag = new Date();
+  const emitido = `${pad2(ag.getDate())}/${pad2(ag.getMonth()+1)}/${ag.getFullYear()} ${pad2(ag.getHours())}:${pad2(ag.getMinutes())}`;
+  const cel = c => (c && typeof c === "object")
+    ? `<td style="${c.cor ? "color:"+c.cor+";" : ""}${c.b ? "font-weight:bold;" : ""}${c.bg ? "background:"+c.bg+";" : ""}">${esc(c.t)}</td>`
+    : `<td>${esc(c)}</td>`;
+  const cardsHtml = cards.length ? `<div class="cards">${cards.map(c => `<div class="card"><b>${esc(c.valor)}</b><span>${esc(c.rotulo)}</span></div>`).join("")}</div>` : "";
+  const secHtml = secoes.map(s => `<h2>${esc(s.titulo)}</h2>${s.nota ? `<p class="nota">${esc(s.nota)}</p>` : ""}` +
+    (s.linhas.length
+      ? `<table><thead><tr>${s.colunas.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${s.linhas.map(l => `<tr>${l.map(cel).join("")}</tr>`).join("")}</tbody>${s.rodape ? `<tfoot><tr>${s.rodape.map(cel).join("")}</tr></tfoot>` : ""}</table>`
+      : (s.omitir ? "" : `<p class="vazio">Nenhum registro.</p>`))).join("");
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"/><title>${esc(titulo)}</title>
+<style>
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1A1208; margin: 0; }
+  .cab { background: #1A1208; color: #FFF; padding: 10px 14px; display: flex; justify-content: space-between; align-items: flex-end; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cab h1 { font-size: 16px; margin: 0; } .cab p { font-size: 11px; opacity: .8; margin: 3px 0 0; } .cab .em { font-size: 10px; opacity: .7; text-align: right; }
+  .cards { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 2px; }
+  .card { border: 2px solid #BFB4A0; border-radius: 6px; padding: 6px 10px; min-width: 96px; }
+  .card b { display: block; font-size: 18px; } .card span { font-size: 10px; color: #6B6458; }
+  h2 { font-size: 12.5px; margin: 14px 0 4px; border-bottom: 2px solid #1A1208; padding-bottom: 2px; }
+  .nota { font-size: 10px; color: #6B6458; margin: 2px 0 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #EDE7DA; text-align: left; font-size: 10px; padding: 4px 6px; border: 1px solid #BFB4A0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  td { padding: 3px 6px; border: 1px solid #CFC5B1; font-size: 10.5px; }
+  tr { page-break-inside: avoid; } thead { display: table-header-group; }
+  tbody tr:nth-child(even) td { background-color: #FAF8F4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tfoot td { font-weight: bold; background: #EDE7DA; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .vazio { font-size: 10.5px; color: #8A8478; padding: 4px 0; }
+  .rod { margin-top: 14px; font-size: 9px; color: #8A8478; text-align: center; }
+</style></head><body>
+<div class="cab"><div><h1>${esc(titulo)}</h1><p>${esc(subtitulo)}</p></div><div class="em">Controle de Presença<br/>Emitido em ${emitido}</div></div>
+${cardsHtml}${secHtml}
+<div class="rod">Controle de Presença · Loja 286 Maracanã</div>
+<script>window.onload=()=>window.print();</script>
+</body></html>`;
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) { alert("Permita pop-ups deste site para imprimir o relatório."); return; }
+  w.document.write(html); w.document.close();
+}
+
 // ====== ANIVERSÁRIO (data de nascimento vem da aba Contratos) ======
 function infoAniversario(nascIso, hoje) {
   if (!nascIso) return null;
@@ -967,6 +1016,26 @@ function TelaBancoHoras({relatorioBH,onSalvarRelatorio,onAjustar,toast,colaborad
   );
   const colabSel=bhFiltro?colaboradores.find(c=>c.id===bhFiltro):null;
 
+  const imprimirBH=()=>{
+    const lista=colabsFiltrados.map(c=>({c,min:saldosPorColab[c.id]||0,rel:relMap[c.matricula]})).sort((a,b)=>a.min-b.min||a.c.nome.localeCompare(b.c.nome,"pt-BR"));
+    const pos=lista.filter(x=>x.min>0), neg=lista.filter(x=>x.min<0);
+    const soma=a=>a.reduce((t,x)=>t+x.min,0);
+    const temRel=(relatorioBH||[]).length>0;
+    const nTurno=c=>(TURNOS.find(t=>t.id===c.turno)||{}).label||c.turno;
+    const dRel=temRel&&relatorioBH[0].data?relatorioBH[0].data.split("-").reverse().join("/"):"";
+    const linhas=lista.map(x=>{
+      const row=[x.c.nome,nTurno(x.c),{t:fmtSaldo(x.min).txt,b:true,cor:x.min<0?"#B71C1C":x.min>0?"#0F5A34":"#6B6458"}];
+      if(temRel) row.push(x.rel?{t:fmtSaldo(x.rel.min).txt,b:x.rel.min!==x.min,cor:x.rel.min===x.min?"#6B6458":"#B71C1C"}:"—");
+      return row;
+    });
+    imprimirResumo({titulo:"Resumo do banco de horas",
+      subtitulo:`${filtroTurno==="todos"?"Todos os turnos":(TURNOS.find(t=>t.id===filtroTurno)||{}).label}${dRel?` · relatório de ${dRel}`:""}`,
+      cards:[{valor:lista.length,rotulo:"colaboradores"},{valor:pos.length,rotulo:`com saldo positivo (${fmtSaldo(soma(pos)).txt})`},{valor:neg.length,rotulo:`com saldo negativo (${fmtSaldo(soma(neg)).txt})`},{valor:fmtSaldo(soma(lista)).txt,rotulo:"saldo líquido total"}],
+      secoes:[{titulo:"Saldo por colaborador (do menor para o maior)",nota:temRel?"Saldo no app = lançamentos feitos aqui. Saldo no relatório = importado do sistema (em vermelho quando diferente).":"",
+        colunas:["Colaborador","Turno","Saldo no app"].concat(temRel?["Saldo no relatório"]:[]),linhas,
+        rodape:["Total ("+lista.length+")","",{t:fmtSaldo(soma(lista)).txt}].concat(temRel?[""]:[])}]});
+  };
+
   return h("div",{style:S.bhWrap},
     h("div",{style:S.bhSaldosSection},
       h("div",{style:S.bhSaldosHeader},
@@ -975,7 +1044,8 @@ function TelaBancoHoras({relatorioBH,onSalvarRelatorio,onAjustar,toast,colaborad
           h("input",{ref:fileRelRef,type:"file",accept:".xlsx,.xls,.csv",style:{display:"none"},
             onChange:e=>{const f=e.target.files&&e.target.files[0]; if(f) lerRelatorio(f); e.target.value="";}}),
           h("button",{style:{padding:"6px 10px",borderRadius:9,border:"2px solid #2B2620",background:"#FFF",color:"#2B2620",fontSize:12,fontWeight:800,cursor:"pointer"},
-            onClick:()=>fileRelRef.current&&fileRelRef.current.click()},"📥 Importar relatório de saldos")
+            onClick:()=>fileRelRef.current&&fileRelRef.current.click()},"📥 Importar relatório de saldos"),
+          h("button",{style:BTN_IMPRIMIR,onClick:imprimirBH},"🖨 Imprimir resumo")
         ),
         h("div",{style:{display:"flex",gap:4,flexWrap:"wrap"}},
           h("button",{style:{...S.bhFiltroBtn,...(filtroTurno==="todos"?S.bhFiltroBtnTodos:{})},onClick:()=>setFiltroTurno("todos")},"Todos"),
@@ -1409,6 +1479,34 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
     return { hoje:l.filter(x=>x.i.dias===0), prox:l.filter(x=>x.i.dias>0).sort((a,b)=>a.i.dias-b.i.dias) };
   }, [rh]);
 
+  const imprimirDia = () => {
+    const st = c => presencas[`${c.id}:${hoje}`] || "vazio";
+    const lab = id => { const t = tiposStatus.find(x => x.id === id); return t ? t.label : id; };
+    const ativos = colaboradores.filter(c => c.turno !== "afastados");
+    const nTurno = c => (TURNOS.find(t => t.id === c.turno) || {}).label || c.turno;
+    const fixos = ["presente", "falta", "folga", "vazio"];
+    const ordena = (a, b) => a.nome.localeCompare(b.nome, "pt-BR");
+    const tot = k => ativos.filter(c => st(c) === k).length;
+    const linhasTurno = TURNOS.filter(t => t.id !== "afastados").map(t => {
+      const l = ativos.filter(c => c.turno === t.id); if (!l.length) return null;
+      const n = k => l.filter(c => st(c) === k).length;
+      return [t.label, t.horario, l.length, { t:n("presente"), b:true, cor:"#0F5A34" }, n("falta") ? { t:n("falta"), b:true, cor:"#B71C1C" } : 0, n("folga"), l.filter(c => !fixos.includes(st(c))).length, n("vazio")];
+    }).filter(Boolean);
+    const ocorr = ativos.filter(c => !["presente", "folga", "vazio"].includes(st(c))).sort((a, b) => st(a).localeCompare(st(b)) || ordena(a, b))
+      .map(c => [c.nome, nTurno(c), { t:lab(st(c)), b:true, cor: st(c) === "falta" ? "#B71C1C" : "#1A1208" }]);
+    const sem = ativos.filter(c => st(c) === "vazio").sort(ordena).map(c => [c.nome, nTurno(c)]);
+    const secoes = [
+      { titulo:"Presença por turno", colunas:["Turno","Horário","Total","Presentes","Faltas","Folgas","Outros","Sem marcação"], linhas:linhasTurno,
+        rodape:["Total", "", ativos.length, tot("presente"), tot("falta"), tot("folga"), ativos.filter(c => !fixos.includes(st(c))).length, tot("vazio")] },
+      { titulo:"Faltas, férias, atestados e outras ocorrências", colunas:["Colaborador","Turno","Status"], linhas:ocorr },
+      sem.length > 0 && { titulo:`Sem marcação hoje (${sem.length})`, colunas:["Colaborador","Turno"], linhas:sem.length <= 30 ? sem : [], omitir:true, nota: sem.length > 30 ? "Lista omitida por ser longa; veja a coluna \"Sem marcação\" da tabela por turno." : "" },
+      (aniversarios.hoje.length + aniversarios.prox.length) > 0 && { titulo:"Aniversariantes (hoje e próximos 7 dias)", colunas:["Colaborador","Data","Idade"],
+        linhas:aniversarios.hoje.concat(aniversarios.prox).map(x => [x.nome, x.i.dias === 0 ? { t:"HOJE", b:true, cor:"#AD1457" } : `${pad2(x.i.dia)}/${pad2(x.i.mes)}`, `${x.i.idade} anos`]) },
+    ].filter(Boolean);
+    imprimirResumo({ titulo:"Resumo da presença", subtitulo:`Loja 286 · ${dataFmt}`,
+      cards:[{ valor:ativos.length, rotulo:"colaboradores" }, { valor:tot("presente"), rotulo:"presentes" }, { valor:tot("falta"), rotulo:"faltas" }, { valor:tot("folga"), rotulo:"folgas" }, { valor:tot("vazio"), rotulo:"sem marcação" }], secoes });
+  };
+
   return h("div", { style: S.resumoWrap },
     h("div", { style: S.resumoHeader },
       h("span", { style: S.resumoTitulo }, `Resumo de hoje — ${dataFmt}`),
@@ -1423,6 +1521,7 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
           style:{ background:"transparent", border:"none", color:"#C9BC9A", cursor:"pointer", padding:0, display:"flex" } },
           h(X, { size:14, strokeWidth:2.6 }))
       ),
+      h("button", { onClick:imprimirDia, style:{ padding:"5px 10px", borderRadius:999, border:"1.5px solid rgba(255,255,255,0.35)", background:"rgba(255,255,255,0.12)", color:"#FAF8F4", fontSize:12, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" } }, "🖨 Imprimir resumo"),
       h("span", { style: S.resumoSubtitulo },
         `${comLancamento} lançados · ${semLancamento} sem marcação`
       )
@@ -1561,6 +1660,20 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
     return cap(p[0])+" "+cap(p[p.length-1]);
   };
 
+  const imprimirAlmoco = () => {
+    const [y, m, d] = almocoData.split("-");
+    const reg = c => almocos[`${c.id}:${almocoData}`] || {};
+    const minDur = r => { if (!r.saida || !r.retorno) return null; const diff = horaParaMin(r.retorno) - horaParaMin(r.saida); return diff > 0 ? diff : null; };
+    const durs = presentes.map(c => minDur(reg(c))).filter(x => x != null);
+    const media = durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : null;
+    imprimirResumo({ titulo:"Resumo do almoço", subtitulo:`Loja 286 · ${d}/${m}/${y}`,
+      cards:[{ valor:presentes.length, rotulo:"presentes" }, { valor:presentes.filter(c => reg(c).saida).length, rotulo:"já saíram" },
+        { valor:presentes.filter(c => reg(c).retorno).length, rotulo:"já voltaram" }, { valor:presentes.filter(c => !reg(c).saida).length, rotulo:"ainda não saíram" },
+        { valor: media != null ? `${Math.floor(media/60)}h${pad2(media%60)}` : "—", rotulo:"duração média" }],
+      secoes: grupos.map(g => ({ titulo:`${(g.info||{}).label || g.turno} · ${(g.info||{}).horario || ""} (${g.lista.length})`, colunas:["Colaborador","Saída","Retorno","Duração"],
+        linhas: g.lista.map(c => { const r = reg(c); return [c.nome, r.saida || "—", r.saida && !r.retorno ? { t:"fora", b:true, cor:"#B7770D" } : (r.retorno || "—"), duracao(r.saida, r.retorno) || "—"]; }) })) });
+  };
+
   return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
 
     // Seletor de data + contador
@@ -1572,6 +1685,7 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
             style:{ ...S.input, width:"auto", padding:"8px 10px" } })
         ),
         h("div", { style:{ textAlign:"right" } },
+          h("button", { style:{ ...BTN_IMPRIMIR, marginBottom:6 }, onClick:imprimirAlmoco }, "🖨 Imprimir resumo"),
           h("div", { style:{ fontSize:22, fontWeight:900, color:"#2B2620" } }, presentes.length),
           h("div", { style:{ fontSize:11, color:"#9C9586" } }, "presentes")
         )
@@ -1742,6 +1856,21 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
       l.dias === 0 ? `Vence HOJE (${l.alvo}d)` : `Faltam ${l.dias} d p/ ${l.alvo} dias`);
   };
 
+  const imprimirContratos = () => {
+    const rotFiltro = { exp:"em experiência", "7d":"vencem em até 7 dias", aniv:"aniversariantes do mês", todos:"todos os colaboradores" }[filtro];
+    const sit = l => l.fase === "futuro" ? `Inicia em ${l.dias} d` : l.fase === "fora" ? "Fora da experiência" : (l.dias === 0 ? "Vence HOJE" : `Faltam ${l.dias} d`) + ` p/ ${l.alvo} dias`;
+    const mes = hoje.getMonth() + 1;
+    const anivs = linhas.filter(l => l.aniv && l.aniv.mes === mes).sort((a, b) => a.aniv.dia - b.aniv.dia || a.nome.localeCompare(b.nome, "pt-BR"));
+    imprimirResumo({ titulo:"Resumo dos contratos de experiência", subtitulo:`Loja 286 · ${fmt(hoje)} · ${rotFiltro}${q.trim() ? ` · busca "${q.trim()}"` : ""}`,
+      cards:[{ valor:cont.exp, rotulo:"em experiência" }, { valor:cont.f1, rotulo:"1º período (até 45 d)" }, { valor:cont.f2, rotulo:"2º período (até 90 d)" }, { valor:cont.sem7, rotulo:"vencem em até 7 dias" }, { valor:cont.aniv, rotulo:"aniversariantes do mês" }],
+      secoes:[
+        { titulo:`Contratos — ${rotFiltro} (${visiveis.length})`, nota:"Contagem: o dia da admissão é o dia 1 (45º dia = admissão + 44; 90º dia = admissão + 89).",
+          colunas:["Colaborador","Cargo","Admissão","Término 45 dias","Término 90 dias","Situação"],
+          linhas:visiveis.map(l => [l.nome, l.cargo, fmtIso(l.admissao), { t:fmt(l.fim45), b:l.alvo === "45" }, { t:fmt(l.fim90), b:l.alvo === "90" }, { t:sit(l), b:l.emExp && l.dias <= 7, cor:l.emExp && l.dias <= 7 ? "#B71C1C" : undefined }]) },
+        { titulo:`Aniversariantes de ${FV_MESES[mes-1]}`, colunas:["Colaborador","Dia","Idade"], linhas:anivs.map(l => [l.nome, `${pad2(l.aniv.dia)}/${pad2(l.aniv.mes)}`, `${l.aniv.idade} anos`]) },
+      ] });
+  };
+
   const anivTxt = l => !l.nascimento ? "" : l.aniv && l.aniv.dias === 0 ? `🎂 HOJE · ${fmtIso(l.nascimento)}` : l.aniv && l.aniv.dias <= 7 ? `🎂 em ${l.aniv.dias} d · ${fmtIso(l.nascimento)}` : fmtIso(l.nascimento);
   const th = { padding:"8px 10px", fontSize:11, fontWeight:800, color:"#6B6458", textAlign:"left", background:"#F4F1EA", borderBottom:"2px solid #CFC5B1", whiteSpace:"nowrap", position:"relative" };
   const td = { padding:"8px 10px", fontSize:12.5, color:"#2B2620", borderBottom:"2px solid #D9CFBC", whiteSpace:"nowrap" };
@@ -1759,6 +1888,7 @@ function TelaContratos({ rh, onImportar, onSalvar, onExcluir }) {
         h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Contratos de experiência"),
         h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Término em 45 e 90 dias, contando o dia da admissão como dia 1")),
       h("div", { style:{ display:"flex", gap:6, flexWrap:"wrap" } },
+        h("button", { style:BTN_IMPRIMIR, onClick:imprimirContratos }, "🖨 Imprimir resumo"),
         h("button", { style:{ ...S.addBtn, background:"#FFF", color:"#2B2620", border:"2px solid #BFB4A0" }, onClick:()=>setEdit({}) }, h(Plus,{size:15,strokeWidth:2.4}), h("span",null,"Novo")),
         h("input", { ref:fileRef, type:"file", accept:".csv,text/csv", style:{ display:"none" },
           onChange:e=>{ const f=e.target.files&&e.target.files[0]; if(f) onImportar(f); e.target.value=""; } }),
@@ -1984,13 +2114,30 @@ function TelaFerias({ rh, ferias, onSalvar, onExcluir, onQuitar }) {
     h("button", { onClick:()=>setModal({ l }), style:{ padding:"6px 10px", borderRadius:8, border:"none", background:"#2B2620", color:"#FAF8F4", fontSize:12, fontWeight:800, cursor:"pointer" } }, "Agendar"),
     l.passados > 0 && h("button", { onClick:()=>setQuitar(l), style:{ padding:"6px 10px", borderRadius:8, border:"2px solid #BFB4A0", background:"#FFF", color:"#5C5648", fontSize:12, fontWeight:700, cursor:"pointer" } }, "Já gozadas"));
 
+  const imprimirFerias = () => {
+    const venc = linhas.filter(l => l.st.k === "vencida" || l.st.k === "vence").sort((a, b) => a.dVenc - b.dVenc);
+    const doAno = comDatas.filter(f => fvParse(f.inicio).getFullYear() === ano || fvParse(f.fim).getFullYear() === ano).sort((a, b) => a.inicio.localeCompare(b.inicio));
+    imprimirResumo({ titulo:"Resumo de férias", subtitulo:`Loja 286 · ${fvFmt(hoje)} · calendário de ${ano} · limite de ${limite} operadores simultâneos`,
+      cards:[{ valor:cont.venc, rotulo:"férias vencidas" }, { valor:cont.prox, rotulo:"vencem em até 90 dias" }, { valor:cont.sem, rotulo:"com direito, sem agendamento" }, { valor:cont.ag, rotulo:"com férias agendadas" }],
+      secoes:[
+        { titulo:"Férias vencidas e vencendo em até 90 dias", nota:"Vencimento = último dia do período concessivo (12 meses após o direito).",
+          colunas:["Colaborador","Admissão","Período aquisitivo","Vencimento","Situação","Agendado"],
+          linhas:venc.map(l => [l.nome, fvFmt(l.adm), `${fvFmt(l.p.aqIni)} a ${fvFmt(l.p.aqFim)}`, { t:fvFmt(l.p.venc), b:true }, { t:l.st.t, b:true, cor:l.st.k === "vencida" || l.dVenc <= 30 ? "#B71C1C" : "#7A5200" }, `${l.agDias} de 30 d`]) },
+        { titulo:`Operadores de férias por mês — ${ano}`, colunas:["Mês","Operadores","Pico simultâneo"],
+          linhas:meses.map(m => [m.nome, m.total || "—", m.pico ? { t:`${m.pico} (dia ${m.picoDia})`, b:m.pico > limite, cor:m.pico > limite ? "#B71C1C" : undefined } : "—"]) },
+        { titulo:`Férias agendadas — ${ano} (${doAno.length})`, colunas:["Colaborador","Início","Fim","Dias","Período"],
+          linhas:doAno.map(f => [nomeDe(f.matricula), fvFmt(fvParse(f.inicio)), fvFmt(fvParse(f.fim)), f.dias, `Período ${f.periodo}`]) },
+      ] });
+  };
+
   const th = { padding:"8px 10px", fontSize:11, fontWeight:800, color:"#6B6458", textAlign:"left", background:"#F4F1EA", borderBottom:"2px solid #BFB4A0", whiteSpace:"nowrap" };
   const td = { padding:"8px 10px", fontSize:12.5, color:"#2B2620", borderBottom:"2px solid #D9CFBC", verticalAlign:"top" };
 
   return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
     h("div", { style:{ marginBottom:10 } },
       h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Férias"),
-      h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Datas calculadas pela admissão (aba Contratos): 12 meses de trabalho dão direito a 30 dias, e as férias precisam ser gozadas nos 12 meses seguintes.")),
+      h("div", { style:{ fontSize:11, color:"#8A8478" } }, "Datas calculadas pela admissão (aba Contratos): 12 meses de trabalho dão direito a 30 dias, e as férias precisam ser gozadas nos 12 meses seguintes."),
+      h("button", { style:{ ...BTN_IMPRIMIR, marginTop:8 }, onClick:imprimirFerias }, "🖨 Imprimir resumo")),
 
     (rh || []).length === 0
       ? h("div", { style:S.emptyState }, h("p", { style:S.emptyTitle }, "Nenhum colaborador na aba Contratos"), h("p", { style:{ fontSize:12, color:"#8A8478", textAlign:"center", maxWidth:300 } }, "Importe a planilha na aba Contratos para calcular os vencimentos de férias."))
