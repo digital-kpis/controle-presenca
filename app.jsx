@@ -8,6 +8,7 @@ function Icon({ children, size=16, strokeWidth=2, color="currentColor", style })
 const Search       = p => h(Icon,p, h("circle",{cx:11,cy:11,r:7}), h("path",{d:"M21 21l-4.3-4.3"}));
 const FileText     = p => h(Icon,p, h("path",{d:"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"}), h("path",{d:"M14 3v6h6M8 13h8M8 17h5"}));
 const Sun          = p => h(Icon,p, h("circle",{cx:12,cy:12,r:4}), h("path",{d:"M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"}));
+const AlertTri     = p => h(Icon,p, h("path",{d:"M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"}), h("path",{d:"M12 9v4M12 17h.01"}));
 const Plus         = p => h(Icon,p, h("path",{d:"M12 5v14M5 12h14"}));
 const X            = p => h(Icon,p, h("path",{d:"M18 6 6 18M6 6l12 12"}));
 const Check        = p => h(Icon,p, h("path",{d:"M20 6 9 17l-5-5"}));
@@ -218,6 +219,7 @@ function ControlePresenca(){
   const [rh,           setRh]           = useState(()=>LC.get("rh",[]));
   const [relatorioBH,   setRelatorioBH]   = useState(()=>LC.get("bhRel",[]));
   const [ferias,        setFerias]        = useState(()=>LC.get("ferias",[]));
+  const [advs,          setAdvs]          = useState(()=>LC.get("faltasAdv",[]));
   const anivMap = useMemo(()=>{
     const hj=new Date(); hj.setHours(0,0,0,0);
     const o={}; rh.forEach(r=>{ const i=infoAniversario(r.nascimento,hj); if(i) o[r.matricula]=i; });
@@ -261,6 +263,7 @@ function ControlePresenca(){
     unsubs.push(fbListen("rh", docs=>{ setRh(docs); LC.set("rh",docs); }));
     unsubs.push(fbListen("bhRelatorio", docs=>{ setRelatorioBH(docs); LC.set("bhRel",docs); }));
     unsubs.push(fbListen("ferias", docs=>{ setFerias(docs); LC.set("ferias",docs); }));
+    unsubs.push(fbListen("faltasAdv", docs=>{ setAdvs(docs); LC.set("faltasAdv",docs); }));
 
     unsubs.push(fbListen("colaboradores", docs=>{
       if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
@@ -438,6 +441,20 @@ function ControlePresenca(){
     }catch(e){ showToast("Erro: "+e.message,true); }
     finally{ setSalvando(false); }
   },[showToast,ferias]);
+
+  const handleSaveAdv=useCallback(async d=>{
+    setSalvando(true);
+    try{ await fbSet("faltasAdv",d.id,d); showToast("Advertência registrada"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleDelAdv=useCallback(async id=>{
+    setSalvando(true);
+    try{ await fbDel("faltasAdv",id); showToast("Marcação removida"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
 
   const handleSaveRh=useCallback(async row=>{
     setSalvando(true);
@@ -635,6 +652,9 @@ function ControlePresenca(){
         ),
         h("button",{style:{...S.navTab,...(tela==="ferias"?S.navTabAtivo:{})},onClick:()=>setTela("ferias")},
           h(Sun,{size:14,color:tela==="ferias"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Férias")
+        ),
+        h("button",{style:{...S.navTab,...(tela==="faltas"?S.navTabAtivo:{})},onClick:()=>setTela("faltas")},
+          h(AlertTri,{size:14,color:tela==="faltas"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Faltas")
         )
       ),
       tela==="presenca"&&h("div",{style:S.tabsRow},
@@ -728,6 +748,7 @@ function ControlePresenca(){
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
     }),
+    tela==="faltas"&&h(TelaFaltas,{colaboradores,presencas,tiposStatus,advs,onSalvar:handleSaveAdv,onExcluir:handleDelAdv}),
     tela==="ferias"&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
     tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
     tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
@@ -2290,6 +2311,152 @@ function QuitarFeriasModal({ l, onClose, onConfirm }) {
       h("div", { style:S.modalActions },
         h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
         h("button", { style:S.btnPrimary, onClick:()=>onConfirm(k) }, h(Check, { size:15, strokeWidth:2.5 }), "Confirmar"))));
+}
+
+// ====== FALTAS (vindas da Escala) + controle de advertência ======
+const FT_DIAS = ["dom","seg","ter","qua","qui","sex","sáb"];
+const ftFmt = iso => { const [y,m,d] = iso.split("-").map(Number); return `${FT_DIAS[new Date(y, m-1, d).getDay()]} ${pad2(d)}/${pad2(m)}/${y}`; };
+const ftFmtCurta = iso => iso ? iso.split("-").reverse().join("/") : "";
+
+function TelaFaltas({ colaboradores, presencas, tiposStatus, advs, onSalvar, onExcluir }) {
+  const agora = new Date();
+  const mesAtual = `${agora.getFullYear()}-${pad2(agora.getMonth()+1)}`;
+  const [periodo, setPeriodo] = useState(mesAtual);   // "" = todo o período
+  const [filtro, setFiltro] = useState("todos");      // todos | pend | adv
+  const [visao, setVisao] = useState("lista");        // lista | operador
+  const [q, setQ] = useState("");
+  const [modal, setModal] = useState(null);
+  const norm = t => (t||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const turnoLabel = c => (TURNOS.find(t => t.id === c.turno) || {}).label || c.turno;
+
+  const advMap = useMemo(() => { const o = {}; (advs || []).forEach(a => { o[a.id] = a; }); return o; }, [advs]);
+  // status "Falta" (id "falta" ou qualquer status cujo nome contenha "falta")
+  const idsFalta = useMemo(() => { const s = new Set(["falta"]); (tiposStatus || []).forEach(t => { if (/falta/i.test(t.label || "")) s.add(t.id); }); return s; }, [tiposStatus]);
+
+  // todas as faltas hoje lançadas na Escala; se virar atestado (ou outro status), sai da lista sozinha
+  const todas = useMemo(() => {
+    const cm = {}; colaboradores.forEach(c => { cm[c.id] = c; });
+    const out = [];
+    Object.keys(presencas).forEach(k => {
+      if (!idsFalta.has(presencas[k])) return;
+      const i = k.lastIndexOf(":"); const c = cm[k.slice(0, i)]; if (!c) return;
+      out.push({ key:k, colab:c, data:k.slice(i+1), adv:advMap[k] || null });
+    });
+    return out;
+  }, [presencas, colaboradores, idsFalta, advMap]);
+
+  const doPeriodo = useMemo(() => todas.filter(f => !periodo || f.data.startsWith(periodo)), [todas, periodo]);
+  const visiveis = useMemo(() => {
+    const t = norm(q.trim());
+    return doPeriodo.filter(f => (filtro === "todos" || (filtro === "pend" ? !f.adv : !!f.adv)) && (!t || norm(f.colab.nome).includes(t) || norm(f.colab.matricula).includes(t)))
+      .sort((a, b) => b.data.localeCompare(a.data) || a.colab.nome.localeCompare(b.colab.nome, "pt-BR"));
+  }, [doPeriodo, filtro, q]);
+  const cont = { faltas:doPeriodo.length, ops:new Set(doPeriodo.map(f => f.colab.id)).size, adv:doPeriodo.filter(f => f.adv).length, pend:doPeriodo.filter(f => !f.adv).length };
+  const porOp = useMemo(() => {
+    const m = {}; visiveis.forEach(f => { (m[f.colab.id] = m[f.colab.id] || { colab:f.colab, itens:[] }).itens.push(f); });
+    return Object.values(m).map(g => ({ ...g, itens:g.itens.sort((a, b) => a.data.localeCompare(b.data)) }))
+      .sort((a, b) => b.itens.length - a.itens.length || a.colab.nome.localeCompare(b.colab.nome, "pt-BR"));
+  }, [visiveis]);
+
+  const alternar = async f => {
+    if (f.adv) { if (window.confirm(`Remover a marcação de advertência de ${f.colab.nome} (${ftFmtCurta(f.data)})?`)) await onExcluir(f.key); }
+    else await onSalvar({ id:f.key, colab_id:f.colab.id, data:f.data, advertencia:true, tipo:"", aplicadaEm:isoDate(new Date()), obs:"" });
+  };
+  const textoAdv = f => f.adv ? `Advertência aplicada${f.adv.tipo ? ` (${f.adv.tipo})` : ""}${f.adv.aplicadaEm ? ` em ${ftFmtCurta(f.adv.aplicadaEm)}` : ""}${f.adv.obs ? ` · ${f.adv.obs}` : ""}` : "Advertência pendente";
+
+  const imprimirFaltas = () => {
+    const rotPeriodo = periodo ? `${FV_MESES[+periodo.split("-")[1]-1]} de ${periodo.split("-")[0]}` : "todo o período";
+    imprimirResumo({ titulo:"Resumo de faltas e advertências", subtitulo:`Loja 286 · ${rotPeriodo}`,
+      cards:[{ valor:cont.faltas, rotulo:"faltas" }, { valor:cont.ops, rotulo:"operadores com falta" }, { valor:cont.adv, rotulo:"advertências aplicadas" }, { valor:cont.pend, rotulo:"advertências pendentes" }],
+      secoes:[
+        { titulo:`Por operador (${porOp.length})`, colunas:["Colaborador","Turno","Faltas","Datas","Advertências"],
+          linhas:porOp.map(g => [g.colab.nome, turnoLabel(g.colab), g.itens.length, g.itens.map(f => ftFmtCurta(f.data).slice(0, 5)).join(", "), { t:`${g.itens.filter(f => f.adv).length} de ${g.itens.length}`, b:true, cor:g.itens.some(f => !f.adv) ? "#B71C1C" : "#0F5A34" }]) },
+        { titulo:`Faltas lançadas (${visiveis.length})`, nota:"Faltas trocadas por atestado na Escala saem desta lista.", colunas:["Data","Colaborador","Turno","Advertência"],
+          linhas:visiveis.map(f => [ftFmt(f.data), f.colab.nome, turnoLabel(f.colab), { t:textoAdv(f), b:!f.adv, cor:f.adv ? "#0F5A34" : "#B71C1C" }]) },
+      ] });
+  };
+
+  const chip = (id, label, n) => h("button", { key:id, onClick:()=>setFiltro(id), style:{ padding:"6px 12px", borderRadius:999, fontSize:12, fontWeight:filtro === id ? 800 : 600, cursor:"pointer", whiteSpace:"nowrap",
+      border:"2px solid "+(filtro === id ? "#2B2620" : "#BFB4A0"), background:filtro === id ? "#2B2620" : "#FFF", color:filtro === id ? "#FAF8F4" : "#5C5648" } }, `${label} (${n})`);
+  const card = (n, label, cor) => h("div", { style:{ flex:"1 1 120px", background:"#FFF", border:"2px solid #BFB4A0", borderLeft:`5px solid ${cor}`, borderRadius:10, padding:"8px 12px" } },
+    h("div", { style:{ fontSize:22, fontWeight:900, color:"#2B2620", lineHeight:1 } }, n), h("div", { style:{ fontSize:11, color:"#6B6458", marginTop:3 } }, label));
+  const visBtn = (id, label) => h("button", { key:id, onClick:()=>setVisao(id), style:{ padding:"6px 12px", fontSize:12, fontWeight:800, cursor:"pointer", border:"2px solid #2B2620", background:visao === id ? "#2B2620" : "#FFF", color:visao === id ? "#FAF8F4" : "#2B2620" } }, label);
+
+  const linha = f => h("div", { key:f.key, style:{ display:"flex", alignItems:"center", gap:10, background:f.adv ? "#F0FAF4" : "#FFF", border:"2px solid "+(f.adv ? "#7CC79B" : "#BFB4A0"), borderRadius:12, padding:"10px 12px" } },
+    h("button", { onClick:()=>alternar(f), "aria-label":f.adv ? "Desmarcar advertência" : "Marcar advertência aplicada",
+      style:{ width:36, height:36, flexShrink:0, borderRadius:9, border:"2.5px solid "+(f.adv ? "#1A7A4A" : "#8A8478"), background:f.adv ? "#1A7A4A" : "#FFF", color:"#FFF", fontSize:20, fontWeight:900, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" } }, f.adv ? "✓" : ""),
+    h("div", { style:{ flex:1, minWidth:0 } },
+      h("div", { style:{ fontSize:14, fontWeight:800, color:"#2B2620", lineHeight:1.2 } }, f.colab.nome),
+      h("div", { style:{ fontSize:11.5, color:"#6B6458", marginTop:2 } }, `${ftFmt(f.data)} · ${turnoLabel(f.colab)}`),
+      h("div", { style:{ fontSize:11.5, marginTop:3, fontWeight:700, color:f.adv ? "#0F5A34" : "#7A5200" } }, textoAdv(f))),
+    h("button", { onClick:()=>setModal(f), "aria-label":"Detalhes da advertência", style:{ width:36, height:36, flexShrink:0, borderRadius:9, border:"none", background:"#F4F1EA", color:"#5C5648", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" } }, h(Pencil, { size:16 })));
+
+  return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
+    h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, flexWrap:"wrap", marginBottom:10 } },
+      h("div", null,
+        h("div", { style:{ fontSize:15, fontWeight:800, color:"#2B2620" } }, "Faltas e advertências"),
+        h("div", { style:{ fontSize:11, color:"#8A8478", maxWidth:520 } }, "Mostra as faltas (FX) lançadas na Escala. Se a falta for trocada por atestado, ela sai daqui sozinha. Toque no quadrado para marcar que a advertência foi aplicada.")),
+      h("button", { style:BTN_IMPRIMIR, onClick:imprimirFaltas }, "🖨 Imprimir resumo")),
+
+    h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 } },
+      card(cont.faltas, "Faltas no período", "#D32F2F"), card(cont.ops, "Operadores com falta", "#F5A300"), card(cont.adv, "Advertências aplicadas", "#2E9E5B"), card(cont.pend, "Advertências pendentes", "#8E44AD")),
+
+    h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 } },
+      h("input", { type:"month", value:periodo, onChange:e=>setPeriodo(e.target.value), style:{ ...S.input, width:"auto", padding:"6px 10px" } }),
+      h("button", { onClick:()=>setPeriodo(periodo ? "" : mesAtual), style:{ padding:"6px 12px", borderRadius:999, fontSize:12, fontWeight:700, cursor:"pointer", border:"2px solid #BFB4A0", background:"#FFF", color:"#5C5648" } }, periodo ? "Ver todo o período" : "Voltar ao mês atual"),
+      h("div", { style:{ display:"inline-flex", borderRadius:9, overflow:"hidden" } }, visBtn("lista", "Por data"), visBtn("operador", "Por operador"))),
+
+    h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 } },
+      chip("todos", "Todas", cont.faltas), chip("pend", "Sem advertência", cont.pend), chip("adv", "Com advertência", cont.adv),
+      h("div", { style:{ display:"flex", alignItems:"center", gap:6, flex:"1 1 160px", maxWidth:260, background:"#FFF", border:"2px solid #BFB4A0", borderRadius:999, padding:"4px 10px" } },
+        h(Search, { size:14, color:"#8A8478", strokeWidth:2.4 }),
+        h("input", { type:"search", value:q, placeholder:"Pesquisar", onChange:e=>setQ(e.target.value), style:{ flex:1, minWidth:0, border:"none", outline:"none", background:"transparent", fontSize:13, fontFamily:"inherit", color:"#2B2620" } }))),
+
+    visiveis.length === 0
+      ? h("div", { style:S.emptyState }, h("p", { style:S.emptyTitle }, todas.length === 0 ? "Nenhuma falta lançada na Escala" : "Nenhuma falta neste filtro"),
+          h("p", { style:{ fontSize:12, color:"#8A8478", textAlign:"center", maxWidth:300 } }, "As faltas aparecem aqui conforme você marca FX na Escala."))
+      : visao === "lista"
+        ? h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } }, visiveis.map(linha))
+        : h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+            porOp.map(g => h("div", { key:g.colab.id, style:{ background:"#FFF", border:"2px solid "+(g.itens.some(f => !f.adv) ? "#BFB4A0" : "#7CC79B"), borderRadius:12, padding:"10px 12px" } },
+              h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8 } },
+                h("div", { style:{ fontSize:14, fontWeight:800, lineHeight:1.2 } }, g.colab.nome),
+                h("div", { style:{ fontSize:12, fontWeight:800, color:"#B71C1C", whiteSpace:"nowrap" } }, `${g.itens.length} falta${g.itens.length > 1 ? "s" : ""}`)),
+              h("div", { style:{ fontSize:11.5, color:"#6B6458", margin:"2px 0 6px" } }, `${turnoLabel(g.colab)} · ${g.itens.filter(f => f.adv).length} de ${g.itens.length} com advertência`),
+              h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } },
+                g.itens.map(f => h("button", { key:f.key, onClick:()=>setModal(f), style:{ padding:"5px 9px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer",
+                    border:"2px solid "+(f.adv ? "#1A7A4A" : "#D32F2F"), background:f.adv ? "#E3F4EA" : "#FDECEA", color:f.adv ? "#0F5A34" : "#B71C1C" } }, `${f.adv ? "✓ " : ""}${ftFmt(f.data)}`)))))),
+
+    modal && h(AdvertenciaModal, { f:modal, onClose:()=>setModal(null),
+      onSave: async d => { await onSalvar(d); setModal(null); }, onRemove: async id => { await onExcluir(id); setModal(null); } })
+  );
+}
+
+function AdvertenciaModal({ f, onClose, onSave, onRemove }) {
+  const [sim, setSim] = useState(true);
+  const [tipo, setTipo] = useState((f.adv && f.adv.tipo) || "");
+  const [data, setData] = useState((f.adv && f.adv.aplicadaEm) || isoDate(new Date()));
+  const [obs, setObs] = useState((f.adv && f.adv.obs) || "");
+  const opc = (v, rot) => h("button", { onClick:()=>setSim(v), style:{ flex:1, padding:"10px", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", fontFamily:"inherit",
+    border:"2.5px solid "+(sim === v ? (v ? "#1A7A4A" : "#B71C1C") : "#BFB4A0"), background:sim === v ? (v ? "#E3F4EA" : "#FDECEA") : "#FFF", color:sim === v ? (v ? "#0F5A34" : "#B71C1C") : "#5C5648" } }, rot);
+  const salvar = () => {
+    if (sim) onSave({ id:f.key, colab_id:f.colab.id, data:f.data, advertencia:true, tipo, aplicadaEm:data, obs:obs.trim() });
+    else if (f.adv) onRemove(f.key); else onClose();
+  };
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:S.modalCard, onClick:e=>e.stopPropagation() },
+      h("div", { style:S.modalHeader }, h("h2", { style:S.modalTitle }, "Advertência"), h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:13, fontWeight:800, margin:"0 0 2px" } }, f.colab.nome),
+      h("p", { style:{ fontSize:12, color:"#6B6458", margin:"0 0 10px" } }, `Falta em ${ftFmt(f.data)}`),
+      h("div", { style:{ ...S.formGroup } }, h("label", { style:S.label }, "Foi aplicada advertência?"),
+        h("div", { style:{ display:"flex", gap:8 } }, opc(true, "Sim, aplicada"), opc(false, "Não"))),
+      sim && h("div", null,
+        h("div", { style:{ display:"flex", gap:10, flexWrap:"wrap" } },
+          h("div", { style:{ ...S.formGroup, flex:"1 1 150px" } }, h("label", { style:S.label }, "Tipo"),
+            h("select", { style:S.input, value:tipo, onChange:e=>setTipo(e.target.value) }, ["", "Verbal", "Escrita", "Suspensão"].map(t => h("option", { key:t, value:t }, t || "Não informado")))),
+          h("div", { style:{ ...S.formGroup, flex:"1 1 150px" } }, h("label", { style:S.label }, "Data da aplicação"), h("input", { type:"date", style:S.input, value:data, onChange:e=>setData(e.target.value) }))),
+        h("div", { style:S.formGroup }, h("label", { style:S.label }, "Observação"), h("input", { style:S.input, value:obs, placeholder:"Opcional", onChange:e=>setObs(e.target.value) }))),
+      h("div", { style:S.modalActions }, h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"), h("button", { style:S.btnPrimary, onClick:salvar }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
 }
 
 // ====== IMPORTAÇÃO DO RELATÓRIO DE SALDOS (BANCO DE HORAS) ======
