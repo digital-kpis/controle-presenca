@@ -2390,7 +2390,7 @@ function TelaFaltas({ colaboradores, presencas, tiposStatus, advs, onSalvar, onE
     const out = [];
     Object.keys(presencas).forEach(k => {
       if (!idsFalta.has(presencas[k])) return;
-      const i = k.lastIndexOf(":"); const c = cm[k.slice(0, i)]; if (!c) return;
+      const i = k.lastIndexOf(":"); const c = cm[k.slice(0, i)]; if (!c || c.turno === "afastados") return;   // afastados não entram na lista de faltas
       out.push({ key:k, colab:c, data:k.slice(i+1), adv:advMap[k] || null });
     });
     return out;
