@@ -798,6 +798,7 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
         borderRadius:18,
         padding:"20px 16px 24px",
         width:"92%", maxWidth:380,
+        maxHeight:"calc(100% - 24px)", overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain",
         animation:"fadeIn 0.18s ease-out",
         boxShadow:"0 20px 60px rgba(0,0,0,0.4)",
       },
@@ -818,15 +819,16 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
       ),
 
       // Opções de status
-      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
 
         // Botão limpar (só aparece se tiver algo marcado)
         statusAtual!=="vazio" && h("button",{
           onClick:()=>onSelect(colabId,dateIso,"vazio"),
           style:{
+            gridColumn:"1 / -1",
             display:"flex",alignItems:"center",gap:12,
-            padding:"11px 14px",borderRadius:12,
-            border:"1.5px dashed #D8CDB8",
+            padding:"8px 12px",borderRadius:12,
+            border:"2px dashed #BFB4A0",
             background:"#FAFAF8",cursor:"pointer",
           }
         },
@@ -849,8 +851,8 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
             key:t.id,
             onClick:()=>onSelect(colabId,dateIso,t.id),
             style:{
-              display:"flex",alignItems:"center",gap:12,
-              padding:"11px 14px",borderRadius:12,
+              display:"flex",alignItems:"center",gap:8,minWidth:0,
+              padding:"8px 9px",borderRadius:12,textAlign:"left",fontFamily:"inherit",
               border: ativo?`2px solid ${t.color}`:"1.5px solid #EFEBE2",
               background: ativo?t.bg:"#FFFFFF",
               cursor:"pointer",
@@ -861,7 +863,7 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
           },
             // Badge
             h("div",{style:{
-              width:40,height:40,borderRadius:10,flexShrink:0,
+              width:36,height:36,borderRadius:10,flexShrink:0,
               background:ativo?t.color:t.bg,
               border:`2px solid ${t.color}`,
               display:"flex",alignItems:"center",justifyContent:"center",
@@ -871,8 +873,8 @@ function ModalStatus({ colabId, dateIso, nome, statusAtual, tiposStatus, onSelec
               boxShadow:ativo?`0 2px 8px ${t.color}66`:"none",
             }},t.short),
             // Info
-            h("div",{style:{flex:1}},
-              h("div",{style:{fontSize:13.5,fontWeight:ativo?800:600,color:ativo?t.color:"#1A1208"}},t.label),
+            h("div",{style:{flex:1,minWidth:0}},
+              h("div",{style:{fontSize:12.5,lineHeight:1.15,fontWeight:ativo?800:700,color:ativo?t.color:"#1A1208",wordBreak:"break-word"}},t.label),
               ativo && h("div",{style:{fontSize:11,color:t.color,marginTop:1,fontWeight:600}},"✓ Selecionado")
             ),
             // Indicador ativo
