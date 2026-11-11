@@ -459,6 +459,20 @@ function ControlePresenca(){
     finally{ setSalvando(false); }
   },[showToast]);
 
+  const handleSetHorarioAlmoco=useCallback(async(id,hora)=>{
+    setSalvando(true);
+    try{ await fbSet("colaboradores",id,{horarioAlmoco:hora||""}); showToast(hora?"Horário de almoço salvo":"Horário removido"); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
+  const handleAplicarHorarios=useCallback(async pares=>{
+    setSalvando(true);
+    try{ await Promise.all(pares.map(p=>fbSet("colaboradores",p.id,{horarioAlmoco:p.hora}))); showToast(`${pares.length} horários de almoço aplicados`); }
+    catch(e){ showToast("Erro: "+e.message,true); }
+    finally{ setSalvando(false); }
+  },[showToast]);
+
   const handleSaveRh=useCallback(async row=>{
     setSalvando(true);
     try{ await fbSet("rh",row.id,row); showToast("Contrato salvo"); }
@@ -755,7 +769,7 @@ function ControlePresenca(){
     tela==="faltas"&&liberado&&h(TelaFaltas,{colaboradores,presencas,tiposStatus,advs,onSalvar:handleSaveAdv,onExcluir:handleDelAdv}),
     tela==="ferias"&&liberado&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
     tela==="contratos"&&liberado&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
-    tela==="almoco"&&liberado&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
+    tela==="almoco"&&liberado&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus,onSetHorario:handleSetHorarioAlmoco,onAplicarHorarios:handleAplicarHorarios}),
 
     tela!=="presenca"&&!liberado&&h(TelaSenha,{onOk:liberar}),
     showCadastro&&h(CadastroModal,{liberado,rh,initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
@@ -1237,6 +1251,7 @@ function CadastroModal({liberado,rh,initial,onClose,onSave}){
   const [turno,    setTurno]    = useState(initial?.turno||"manha");
   const [diaFolga, setDiaFolga] = useState(initial?.diaFolga!==undefined ? initial.diaFolga : null);
   const rhAtual=(rh||[]).find(r=>r.id===initial?.matricula);
+  const [horarioAlmoco,setHorarioAlmoco]=useState(initial?.horarioAlmoco||"");
   const [admissao,  setAdmissao]  = useState(rhAtual?.admissao||"");
   const [nascimento,setNascimento]= useState(rhAtual?.nascimento||"");
   const [error,    setError]    = useState("");
@@ -1244,7 +1259,7 @@ function CadastroModal({liberado,rh,initial,onClose,onSave}){
   const submit=()=>{
     if(!nome.trim()){setError("Informe o nome.");return;}
     if(!matricula.trim()){setError("Informe a matrícula.");return;}
-    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga, admissao:liberado?admissao:"", nascimento:liberado?nascimento:""});
+    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga, horarioAlmoco, admissao:liberado?admissao:"", nascimento:liberado?nascimento:""});
   };
 
   return h("div",{style:S.modalOverlay,onClick:onClose},
@@ -1261,6 +1276,10 @@ function CadastroModal({liberado,rh,initial,onClose,onSave}){
       h("div",{style:S.formGroup},
         h("label",{style:S.label},"Matrícula"),
         h("input",{style:S.input,value:matricula,onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")),placeholder:"Ex.: 7153570",inputMode:"numeric"})
+      ),
+      h("div",{style:S.formGroup},
+        h("label",{style:S.label},"Horário padrão de almoço"),
+        h("input",{type:"time",style:S.input,value:horarioAlmoco,onChange:e=>setHorarioAlmoco(e.target.value)})
       ),
       liberado&&h("div",null,
       h("div",{style:{display:"flex",gap:10,flexWrap:"wrap"}},
@@ -1629,7 +1648,12 @@ function ResumoDia({ colaboradores, presencas, tiposStatus, dataRef, busca, setB
 }
 
 // ====== TELA ALMOÇO ======
-function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoData, onSave, tiposStatus }) {
+function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoData, onSave, tiposStatus, onSetHorario, onAplicarHorarios }) {
+  const [agrupar, setAgrupar] = useState(null);
+  const [modalHor, setModalHor] = useState(null);
+  const [impAlmoco, setImpAlmoco] = useState(false);
+  const comHor = colaboradores.filter(c => c.horarioAlmoco).length;
+  const modo = agrupar || (comHor > 0 ? "horario" : "turno");
 
   const horaAgora = () => {
     const n = new Date();
@@ -1674,6 +1698,14 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
   }, [colaboradores, presencas, almocoData]);
 
   const grupos = useMemo(() => {
+    if (modo === "horario") {
+      const m = {};
+      presentes.forEach(c => { const k = c.horarioAlmoco || "-"; (m[k] = m[k] || []).push(c); });
+      return Object.keys(m).sort((a, b) => a === "-" ? 1 : b === "-" ? -1 : a.localeCompare(b)).map(k => ({
+        turno:k,
+        info: k === "-" ? { label:"Sem horário definido", horario:"toque no 🕐 do colaborador", cor:"#BDB6A8" } : { label:`🍽 Almoço ${k}`, horario:"horário padrão", cor:"#E67E22" },
+        lista: m[k].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) }));
+    }
     const out = [];
     presentes.forEach(c => {
       let g = out[out.length-1];
@@ -1681,7 +1713,7 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
       g.lista.push(c);
     });
     return out;
-  }, [presentes]);
+  }, [presentes, modo]);
 
   const nomeCurto = (nome) => {
     const p = (nome||"").trim().split(/\s+/);
@@ -1700,8 +1732,8 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
       cards:[{ valor:presentes.length, rotulo:"presentes" }, { valor:presentes.filter(c => reg(c).saida).length, rotulo:"já saíram" },
         { valor:presentes.filter(c => reg(c).retorno).length, rotulo:"já voltaram" }, { valor:presentes.filter(c => !reg(c).saida).length, rotulo:"ainda não saíram" },
         { valor: media != null ? `${Math.floor(media/60)}h${pad2(media%60)}` : "—", rotulo:"duração média" }],
-      secoes: grupos.map(g => ({ titulo:`${(g.info||{}).label || g.turno} · ${(g.info||{}).horario || ""} (${g.lista.length})`, colunas:["Colaborador","Saída","Retorno","Duração"],
-        linhas: g.lista.map(c => { const r = reg(c); return [c.nome, r.saida || "—", r.saida && !r.retorno ? { t:"fora", b:true, cor:"#B7770D" } : (r.retorno || "—"), duracao(r.saida, r.retorno) || "—"]; }) })) });
+      secoes: grupos.map(g => ({ titulo:`${(g.info||{}).label || g.turno} · ${(g.info||{}).horario || ""} (${g.lista.length})`, colunas:["Colaborador","Almoço padrão","Saída","Retorno","Duração"],
+        linhas: g.lista.map(c => { const r = reg(c); return [c.nome, c.horarioAlmoco || "—", r.saida || "—", r.saida && !r.retorno ? { t:"fora", b:true, cor:"#B7770D" } : (r.retorno || "—"), duracao(r.saida, r.retorno) || "—"]; }) })) });
   };
 
   return h("div", { style:{ padding:"12px 16px", paddingBottom:60 } },
@@ -1735,6 +1767,13 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
         )
       )
     ),
+
+    h("div", { style:{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:12 } },
+      h("span", { style:{ fontSize:12, fontWeight:700, color:"#6B6458" } }, "Agrupar por:"),
+      h("div", { style:{ display:"inline-flex", borderRadius:9, overflow:"hidden" } },
+        [["turno", "Turno"], ["horario", "Horário de almoço"]].map(([id, rot]) => h("button", { key:id, onClick:()=>setAgrupar(id), style:{ padding:"6px 12px", fontSize:12, fontWeight:800, cursor:"pointer", border:"2px solid #2B2620", background:modo === id ? "#2B2620" : "#FFF", color:modo === id ? "#FAF8F4" : "#2B2620" } }, rot))),
+      h("button", { style:BTN_IMPRIMIR, onClick:()=>setImpAlmoco(true) }, "📋 Aplicar quadro de horários"),
+      h("span", { style:{ fontSize:11, color:"#8A8478" } }, `${comHor} de ${colaboradores.length} com horário padrão`)),
 
     presentes.length === 0 ?
       h("div", { style:S.emptyState },
@@ -1782,7 +1821,7 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
               },
                 // Ícone / estado
                 estado === "livre"
-                  ? h(UtensilsCrossed, { size:16, color:"#BDC3C7", strokeWidth:2 })
+                  ? (colab.horarioAlmoco ? h("span", { style:{ fontSize:10.5, fontWeight:800, color:"#8A8478", lineHeight:1, marginTop:2 } }, "🍽 " + colab.horarioAlmoco) : h(UtensilsCrossed, { size:16, color:"#BDC3C7", strokeWidth:2 }))
                   : h("span", { style:{ fontSize:10, fontWeight:900, color:cores.badgeText, lineHeight:1, marginTop:2 } }, cores.label),
 
                 // Nome
@@ -1799,6 +1838,12 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
                   dur && h("div", { style:{ color:"#5C5648", fontWeight:600 } }, dur)
                 )
               ),
+
+              // Horário padrão de almoço
+              h("button", { title:"Horário de almoço", "aria-label":"Horário de almoço de "+colab.nome,
+                onClick: e => { e.stopPropagation(); setModalHor(colab); },
+                style:{ position:"absolute", top:-6, left:-6, width:22, height:22, borderRadius:"50%", background:"#FFF", border:"2px solid #BFB4A0",
+                  fontSize:11, lineHeight:1, cursor:"pointer", padding:0, display:"flex", alignItems:"center", justifyContent:"center", zIndex:2 } }, "🕐"),
 
               // Excluir lançamento
               reg.saida && h("button", {
@@ -1821,7 +1866,9 @@ function TelaAlmoco({ colaboradores, presencas, almocos, almocoData, setAlmocoDa
             })
           )
         ))
-      )
+      ),
+    modalHor && h(HorarioAlmocoModal, { colab:modalHor, onClose:()=>setModalHor(null), onSave: async (id, hora) => { await onSetHorario(id, hora); setModalHor(null); } }),
+    impAlmoco && h(ImportAlmocoModal, { colaboradores, onClose:()=>setImpAlmoco(false), onConfirm: async pares => { await onAplicarHorarios(pares); setImpAlmoco(false); } })
   );
 }
 
@@ -2320,6 +2367,85 @@ function QuitarFeriasModal({ l, onClose, onConfirm }) {
       h("div", { style:S.modalActions },
         h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
         h("button", { style:S.btnPrimary, onClick:()=>onConfirm(k) }, h(Check, { size:15, strokeWidth:2.5 }), "Confirmar"))));
+}
+
+// ====== HORÁRIO PADRÃO DE ALMOÇO ======
+// Quadro "Horário de almoço" (nomes como aparecem no quadro; o app procura o colaborador correspondente)
+const QUADRO_ALMOCO = [
+  ["11:00", ["PRISCILA", "ALEXSANDRA", "CLAUDIA REGINA", "DAYENE", "FERNANDA", "FRANCICLEIDE", "KAMILI", "ALFREDO NASCIMENTO", "EDVALDO", "DAMIANA"]],
+  ["12:00", ["LIZANDRA ARAUJO", "JOSELITO", "BRUNA", "ANA BEATRIZ", "DEIVISON VIEIRA", "VICTORIA", "BEATRIZ", "ANDRESSA", "DANILLO"]],
+  ["13:00", ["MARIA EDUARDA", "NATANIEL SOUSA", "TAMIRIS NICACIO", "CAMILA", "WILLIANE", "ROSICLEIA", "DANIELE", "LAIZ INDIRA", "BRUNO"]],
+  ["14:00", ["MATHEUS LUIZ", "GABRIEL MARTINS", "TALIA MESQUITA", "RAQUEL", "SUELEN", "SULAMITA", "TAISSA FERREIRA", "YURI"]],
+  ["16:00", ["ALESSANDRA", "LEONARDO", "ROMULO DAVID", "JULIELEN", "JULIANA FREITAS", "NATALIA", "SARAH", "ADRYELE", "ANA PAULA", "RAYANNE"]],
+  ["17:00", ["MARCELO DA SILVA", "THAINA", "ELISANGELA", "LILIAN", "SANDRO", "VICTOR", "JULIA LIMA", "MARIANE", "KELLY"]],
+  ["18:00", ["JESSICA", "MATHEUS CHEREM", "JONAS", "GUILHERME", "JUAN", "YANNY", "KAIKY", "CARLA CAROLINE", "WESLEY"]],
+];
+
+function distLev(a, b) {
+  const d = Array.from({ length:b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) { let p = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j-1] + 1, p + (a[i-1] !== b[j-1] ? 1 : 0)); p = t; } }
+  return d[b.length];
+}
+// exatos; se não houver, nomes parecidos (1 letra de diferença, só para nomes com 6+ letras) marcados com .aprox
+function candidatosAlmoco(chave, colaboradores) {
+  const nz = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const k = nz(chave), ord = (a, b) => a.nome.localeCompare(b.nome, "pt-BR");
+  const exatos = colaboradores.filter(c => { const n = nz(c.nome); return k.length === 1 ? n[0] === k[0] : k.every(t => n.includes(t)); }).sort(ord);
+  if (exatos.length > 0 || k.length !== 1 || k[0].length < 6) return exatos;
+  const p = colaboradores.filter(c => distLev(nz(c.nome)[0] || "", k[0]) <= 1).sort(ord);
+  p.aprox = true; return p;
+}
+
+function ImportAlmocoModal({ colaboradores, onClose, onConfirm }) {
+  const todos = useMemo(() => colaboradores.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")), [colaboradores]);
+  const entradas = useMemo(() => QUADRO_ALMOCO.flatMap(([hora, nomes]) => nomes.map(n => ({ chave:n, hora, cands:candidatosAlmoco(n, colaboradores) }))), [colaboradores]);
+  const [esc, setEsc] = useState(() => { const o = {}; entradas.forEach((e, i) => { if (e.cands.length === 1 && !e.cands.aprox) o[i] = e.cands[0].id; }); return o; });
+  const nomeDe = id => (colaboradores.find(c => c.id === id) || {}).nome || "";
+  const usados = {}; Object.keys(esc).forEach(i => { if (esc[i]) usados[esc[i]] = (usados[esc[i]] || 0) + 1; });
+  const duplicados = Object.keys(usados).filter(id => usados[id] > 1);
+  const aplicar = Object.keys(esc).filter(i => esc[i]).length;
+  const idx = entradas.map((e, i) => i);
+  const precisa = idx.filter(i => entradas[i].cands.length !== 1 || entradas[i].cands.aprox);
+  const ok = idx.filter(i => entradas[i].cands.length === 1 && !entradas[i].cands.aprox);
+  const linha = i => {
+    const e = entradas[i]; const aprox = Boolean(e.cands.aprox); const opcoes = e.cands.length > 0 && !aprox ? e.cands : todos;
+    return h("div", { key:i, style:{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderTop:"1.5px solid #E3DBCB", flexWrap:"wrap" } },
+      h("div", { style:{ flex:"1 1 130px", minWidth:0 } },
+        h("div", { style:{ fontSize:12.5, fontWeight:800 } }, e.chave),
+        h("div", { style:{ fontSize:11, color: e.cands.length === 0 ? "#B71C1C" : e.cands.length > 1 ? "#7A5200" : "#0F5A34", fontWeight:700 } },
+          `🍽 ${e.hora} · ${e.cands.length === 0 ? "não encontrado" : aprox ? "nome parecido: confira" : e.cands.length > 1 ? e.cands.length + " possíveis" : "encontrado"}`)),
+      h("select", { value:esc[i] || "", onChange:ev => setEsc({ ...esc, [i]: ev.target.value }),
+        style:{ ...S.input, flex:"1 1 170px", minWidth:0, padding:"6px 8px", fontSize:13, border:"2px solid "+(duplicados.includes(esc[i]) ? "#D32F2F" : "#BFB4A0") } },
+        h("option", { value:"" }, "— não aplicar —"),
+        aprox ? [h("optgroup", { key:"p", label:"Parecidos" }, e.cands.map(c => h("option", { key:"p"+c.id, value:c.id }, c.nome))), h("optgroup", { key:"t", label:"Todos" }, todos.map(c => h("option", { key:c.id, value:c.id }, c.nome)))]
+        : opcoes.map(c => h("option", { key:c.id, value:c.id }, c.nome + (c.horarioAlmoco && c.horarioAlmoco !== e.hora ? ` (atual ${c.horarioAlmoco})` : "")))));
+  };
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:{ ...S.modalCard, maxWidth:560 }, onClick:e => e.stopPropagation() },
+      h("div", { style:S.modalHeader }, h("h2", { style:S.modalTitle }, "Quadro de horários de almoço"), h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:12, color:"#6B6458", margin:"0 0 8px", lineHeight:1.4 } }, `O quadro tem ${entradas.length} nomes. Confira, escolha o colaborador correto onde houver dúvida e aplique. Quem ficar como "não aplicar" não muda.`),
+      precisa.length > 0 && h("div", { style:{ marginBottom:8 } }, h("div", { style:{ fontSize:12, fontWeight:900, color:"#7A5200", marginBottom:2 } }, `Precisam de escolha (${precisa.length})`), precisa.map(linha)),
+      h("div", null, h("div", { style:{ fontSize:12, fontWeight:900, color:"#0F5A34", marginBottom:2 } }, `Encontrados (${ok.length})`), ok.map(linha)),
+      duplicados.length > 0 && h("p", { style:S.errorText }, `Há ${duplicados.length} colaborador(es) escolhido(s) em mais de uma linha (em vermelho). Ajuste antes de aplicar.`),
+      h("div", { style:S.modalActions },
+        h("span", { style:{ fontSize:12, color:"#6B6458", flex:1 } }, `${aplicar} a aplicar`),
+        h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+        h("button", { style:{ ...S.btnPrimary, opacity: aplicar && !duplicados.length ? 1 : 0.5 }, disabled:!aplicar || duplicados.length > 0,
+          onClick:() => onConfirm(Object.keys(esc).filter(i => esc[i]).map(i => ({ id:esc[i], hora:entradas[i].hora }))) }, h(Check, { size:15, strokeWidth:2.5 }), `Aplicar ${aplicar}`))));
+}
+
+function HorarioAlmocoModal({ colab, onClose, onSave }) {
+  const [hora, setHora] = useState(colab.horarioAlmoco || "");
+  return h("div", { style:S.modalOverlay, onClick:onClose },
+    h("div", { style:S.modalCard, onClick:e => e.stopPropagation() },
+      h("div", { style:S.modalHeader }, h("h2", { style:S.modalTitle }, "Horário de almoço"), h("button", { style:S.modalClose, onClick:onClose }, h(X, { size:18 }))),
+      h("p", { style:{ fontSize:13, fontWeight:800, margin:"0 0 10px" } }, colab.nome),
+      h("div", { style:S.formGroup }, h("label", { style:S.label }, "Horário padrão"),
+        h("input", { type:"time", style:S.input, value:hora, onChange:e => setHora(e.target.value) })),
+      h("div", { style:S.modalActions },
+        colab.horarioAlmoco && h("button", { style:{ ...S.btnGhost, color:"#B71C1C", borderColor:"#E57373" }, onClick:() => onSave(colab.id, "") }, "Remover"),
+        h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
+        h("button", { style:S.btnPrimary, onClick:() => onSave(colab.id, hora) }, h(Check, { size:15, strokeWidth:2.5 }), "Salvar"))));
 }
 
 // ====== SENHA (todas as abas, exceto a Escala) ======
