@@ -220,6 +220,9 @@ function ControlePresenca(){
   const [relatorioBH,   setRelatorioBH]   = useState(()=>LC.get("bhRel",[]));
   const [ferias,        setFerias]        = useState(()=>LC.get("ferias",[]));
   const [advs,          setAdvs]          = useState(()=>LC.get("faltasAdv",[]));
+  const [liberado,      setLiberado]      = useState(()=>{ try{ return sessionStorage.getItem("cp_liberado")==="1"; }catch(e){ return false; } });
+  const liberar=()=>{ setLiberado(true); try{ sessionStorage.setItem("cp_liberado","1"); }catch(e){} };
+  const bloquear=()=>{ setLiberado(false); try{ sessionStorage.removeItem("cp_liberado"); }catch(e){} setTela("presenca"); };
   const anivMap = useMemo(()=>{
     const hj=new Date(); hj.setHours(0,0,0,0);
     const o={}; rh.forEach(r=>{ const i=infoAniversario(r.nascimento,hj); if(i) o[r.matricula]=i; });
@@ -655,7 +658,8 @@ function ControlePresenca(){
         ),
         h("button",{style:{...S.navTab,...(tela==="faltas"?S.navTabAtivo:{})},onClick:()=>setTela("faltas")},
           h(AlertTri,{size:14,color:tela==="faltas"?"#FF6D00":"#C9BC9A",strokeWidth:2.2}),h("span",null,"Faltas")
-        )
+        ),
+        liberado&&h("button",{onClick:bloquear,style:{...S.navTab,marginLeft:"auto",color:"#C9BC9A",flexShrink:0}},h("span",null,"🔒 Bloquear"))
       ),
       tela==="presenca"&&h("div",{style:S.tabsRow},
         h("button",{onClick:()=>setTurnoAtivo("todos"),style:{...S.tab,...(isVisaoTodos?{...S.tabActive,borderColor:VISAO_TODOS.cor}:{})}},
@@ -742,18 +746,19 @@ function ControlePresenca(){
       )
     ),
 
-    tela==="bancohoras"&&h(TelaBancoHoras,{relatorioBH,onSalvarRelatorio:handleSalvarRelatorioBH,onAjustar:handleAjustarBH,toast:showToast,colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
+    tela==="bancohoras"&&liberado&&h(TelaBancoHoras,{relatorioBH,onSalvarRelatorio:handleSalvarRelatorioBH,onAjustar:handleAjustarBH,toast:showToast,colaboradores,bancoHoras,saldosPorColab,bhFiltro,setBhFiltro,
       onNovo:colabId=>{setEditingLanc(colabId?{colab_id:colabId}:null);setShowLanc(true);},
       onEditar:l=>{setEditingLanc(l);setShowLanc(true);},
       onDeletar:handleDeleteLanc,
       onDeletarVarios:handleDeleteLancs,
     }),
-    tela==="faltas"&&h(TelaFaltas,{colaboradores,presencas,tiposStatus,advs,onSalvar:handleSaveAdv,onExcluir:handleDelAdv}),
-    tela==="ferias"&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
-    tela==="contratos"&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
-    tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
+    tela==="faltas"&&liberado&&h(TelaFaltas,{colaboradores,presencas,tiposStatus,advs,onSalvar:handleSaveAdv,onExcluir:handleDelAdv}),
+    tela==="ferias"&&liberado&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
+    tela==="contratos"&&liberado&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
+    tela==="almoco"&&liberado&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus}),
 
-    showCadastro&&h(CadastroModal,{rh,initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
+    tela!=="presenca"&&!liberado&&h(TelaSenha,{onOk:liberar}),
+    showCadastro&&h(CadastroModal,{liberado,rh,initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
     showTipos&&h(TiposModal,{tipos:tiposStatus,onClose:()=>setShowTipos(false),onSave:handleSaveTipo,onDelete:handleDeleteTipo}),
     showLanc&&h(LancamentoModal,{initial:editingLanc,colaboradores,onClose:()=>{setShowLanc(false);setEditingLanc(null);},onSave:handleSaveLanc}),
     confirmDelColab&&h("div",{style:S.modalOverlay,onClick:()=>setConfirmDelColab(null)},
@@ -1222,7 +1227,7 @@ function LancamentoModal({initial,colaboradores,onClose,onSave}){
 }
 
 // ====== MODAL CADASTRO ======
-function CadastroModal({rh,initial,onClose,onSave}){
+function CadastroModal({liberado,rh,initial,onClose,onSave}){
   const isEdit=Boolean(initial&&initial.id);
   const [nome,     setNome]     = useState(initial?.nome||"");
   const [matricula,setMatricula]= useState(initial?.matricula||"");
@@ -1237,7 +1242,7 @@ function CadastroModal({rh,initial,onClose,onSave}){
   const submit=()=>{
     if(!nome.trim()){setError("Informe o nome.");return;}
     if(!matricula.trim()){setError("Informe a matrícula.");return;}
-    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga, admissao, nascimento});
+    onSave({id:initial?.id, nome:nome.trim(), matricula:matricula.trim(), funcao, turno, diaFolga, admissao:liberado?admissao:"", nascimento:liberado?nascimento:""});
   };
 
   return h("div",{style:S.modalOverlay,onClick:onClose},
@@ -1255,6 +1260,7 @@ function CadastroModal({rh,initial,onClose,onSave}){
         h("label",{style:S.label},"Matrícula"),
         h("input",{style:S.input,value:matricula,onChange:e=>setMatricula(e.target.value.replace(/[^0-9]/g,"")),placeholder:"Ex.: 7153570",inputMode:"numeric"})
       ),
+      liberado&&h("div",null,
       h("div",{style:{display:"flex",gap:10,flexWrap:"wrap"}},
         h("div",{style:{...S.formGroup,flex:"1 1 140px"}},
           h("label",{style:S.label},"Data de admissão"),
@@ -1265,7 +1271,8 @@ function CadastroModal({rh,initial,onClose,onSave}){
           h("input",{type:"date",style:S.input,value:nascimento,onChange:e=>setNascimento(e.target.value)})
         )
       ),
-      h("p",{style:{...S.hintText,marginTop:-6,marginBottom:10}},"Com a data de admissão preenchida, o colaborador é lançado na aba Contratos (45 e 90 dias)."),
+      h("p",{style:{...S.hintText,marginTop:-6,marginBottom:10}},"Com a data de admissão preenchida, o colaborador é lançado na aba Contratos (45 e 90 dias).")
+      ),
       h("div",{style:S.formGroup},
         h("label",{style:S.label},"Função"),
         h("div",{style:S.chipRow},...FUNCOES.map(f=>h("button",{key:f,onClick:()=>setFuncao(f),style:{...S.chip,...(funcao===f?S.chipActive:{})}},f)))
@@ -2311,6 +2318,48 @@ function QuitarFeriasModal({ l, onClose, onConfirm }) {
       h("div", { style:S.modalActions },
         h("button", { style:S.btnGhost, onClick:onClose }, "Cancelar"),
         h("button", { style:S.btnPrimary, onClick:()=>onConfirm(k) }, h(Check, { size:15, strokeWidth:2.5 }), "Confirmar"))));
+}
+
+// ====== SENHA (todas as abas, exceto a Escala) ======
+// Obs.: proteção de tela. O código do app é público, então isto não substitui regras de acesso no Firebase.
+const SENHA_HASH = "0e747c2546a11bd46a24b0dc95c1325a9753cdaffaada9ed92ad598e7c38341f";
+async function sha256Hex(txt) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, "0")).join("");
+}
+
+function TelaSenha({ onOk }) {
+  const [valor, setValor] = useState("");
+  const [erro, setErro] = useState("");
+  const [tent, setTent] = useState(0);
+  const [ate, setAte] = useState(0);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!ate) return;
+    const id = setInterval(() => { tick(x => x + 1); if (Date.now() >= ate) { setAte(0); setTent(0); setErro(""); } }, 500);
+    return () => clearInterval(id);
+  }, [ate]);
+  const bloqueado = ate > Date.now();
+  const entrar = async () => {
+    if (bloqueado || !valor) return;
+    let ok = false;
+    try { ok = (await sha256Hex("controle-presenca:" + valor)) === SENHA_HASH; }
+    catch (e) { setErro("Não foi possível verificar a senha neste navegador."); return; }
+    if (ok) { onOk(); return; }
+    const n = tent + 1; setTent(n); setValor("");
+    if (n >= 5) { setAte(Date.now() + 30000); setErro("Muitas tentativas. Aguarde 30 segundos."); }
+    else setErro(`Senha incorreta (${n}/5).`);
+  };
+  return h("div", { style:{ display:"flex", justifyContent:"center", padding:"40px 16px" } },
+    h("div", { style:{ width:"100%", maxWidth:340, background:"#FFF", border:"2px solid #BFB4A0", borderRadius:16, padding:"24px 20px", textAlign:"center", boxShadow:"0 6px 24px rgba(0,0,0,0.08)" } },
+      h("div", { style:{ fontSize:34, lineHeight:1 } }, "🔒"),
+      h("div", { style:{ fontSize:16, fontWeight:900, color:"#2B2620", margin:"8px 0 2px" } }, "Área protegida"),
+      h("div", { style:{ fontSize:12, color:"#8A8478", marginBottom:14 } }, "Digite a senha para ver esta aba. A Escala é livre."),
+      h("input", { type:"password", inputMode:"numeric", autoComplete:"off", autoFocus:true, value:valor, disabled:bloqueado, placeholder:"Senha", "aria-label":"Senha",
+        onChange:e=>{ setValor(e.target.value); setErro(bloqueado ? erro : ""); }, onKeyDown:e=>{ if (e.key === "Enter") entrar(); },
+        style:{ ...S.input, textAlign:"center", fontSize:22, letterSpacing:"0.3em", fontWeight:800 } }),
+      erro && h("p", { style:{ ...S.errorText, marginTop:8 } }, erro),
+      h("button", { onClick:entrar, disabled:bloqueado || !valor, style:{ ...S.btnPrimary, width:"100%", marginTop:12, justifyContent:"center", opacity:bloqueado || !valor ? 0.5 : 1 } }, "Entrar")));
 }
 
 // ====== FALTAS (vindas da Escala) + controle de advertência ======
