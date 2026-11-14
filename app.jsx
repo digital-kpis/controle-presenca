@@ -769,9 +769,9 @@ function ControlePresenca(){
     tela==="faltas"&&liberado&&h(TelaFaltas,{colaboradores,presencas,tiposStatus,advs,onSalvar:handleSaveAdv,onExcluir:handleDelAdv}),
     tela==="ferias"&&liberado&&h(TelaFerias,{rh,ferias,onSalvar:handleSaveFerias,onExcluir:handleDelFerias,onQuitar:handleQuitarFerias}),
     tela==="contratos"&&liberado&&h(TelaContratos,{rh,onImportar:handleImportRh,onSalvar:handleSaveRh,onExcluir:handleDelRh}),
-    tela==="almoco"&&liberado&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus,onSetHorario:handleSetHorarioAlmoco,onAplicarHorarios:handleAplicarHorarios}),
+    tela==="almoco"&&h(TelaAlmoco,{colaboradores,presencas,almocos,almocoData,setAlmocoData,onSave:handleSaveAlmoco,tiposStatus,onSetHorario:handleSetHorarioAlmoco,onAplicarHorarios:handleAplicarHorarios}),
 
-    tela!=="presenca"&&!liberado&&h(TelaSenha,{onOk:liberar}),
+    tela!=="presenca"&&tela!=="almoco"&&!liberado&&h(TelaSenha,{onOk:liberar}),
     showCadastro&&h(CadastroModal,{liberado,rh,initial:editingColab,onClose:()=>{setShowCadastro(false);setEditingColab(null);},onSave:handleSaveColab}),
     showTipos&&h(TiposModal,{tipos:tiposStatus,onClose:()=>setShowTipos(false),onSave:handleSaveTipo,onDelete:handleDeleteTipo}),
     showLanc&&h(LancamentoModal,{initial:editingLanc,colaboradores,onClose:()=>{setShowLanc(false);setEditingLanc(null);},onSave:handleSaveLanc}),
