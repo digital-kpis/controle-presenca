@@ -163,8 +163,26 @@ async function fbSetAll(col, docs){
 function fbListen(col, callback){
   const db = getDB();
   return db.collection(col).onSnapshot(snap=>{
-    callback(snap.docs.map(d=>({id:d.id,...d.data()})));
+    callback(snap.docs.map(d=>({id:d.id,...d.data()})), snap.metadata);
   });
+}
+
+// ── Grava SÓ o que mudou num documento-mapa (presencas/almocos). valor null = apagar a chave ──
+// (antes o mapa inteiro era regravado com merge: exclusões nunca chegavam ao servidor e aparelhos
+//  desatualizados sobrescreviam alterações de outros)
+async function fbPatchMapa(col, changes){
+  const keys = Object.keys(changes);
+  if(!keys.length) return;
+  const db = getDB(); const FV = window.firebase.firestore.FieldValue;
+  const data = {};
+  keys.forEach(k => { data[k] = changes[k] === null ? FV.delete() : changes[k]; });
+  await db.collection(col).doc("mapa").set({ data }, { merge:true });
+}
+function diffMapa(antes, depois){
+  const ch = {};
+  Object.keys(depois).forEach(k => { if(JSON.stringify(antes[k]) !== JSON.stringify(depois[k])) ch[k] = depois[k]; });
+  Object.keys(antes).forEach(k => { if(!(k in depois)) ch[k] = null; });
+  return ch;
 }
 
 // ====== SEED ======
@@ -242,6 +260,7 @@ function ControlePresenca(){
   const presencasRef = useRef({});
   const [modalStatus, setModalStatus] = useState(null); // {colabId, dateIso, nome}
   const saveTimer    = useRef(null);
+  const pendingRef   = useRef({});   // mudanças de presença ainda não enviadas (chave → valor | null)
 
   const showToast = useCallback((msg,err=false)=>{
     setToast({msg,err}); setTimeout(()=>setToast(null),3000);
@@ -268,52 +287,40 @@ function ControlePresenca(){
     unsubs.push(fbListen("ferias", docs=>{ setFerias(docs); LC.set("ferias",docs); }));
     unsubs.push(fbListen("faltasAdv", docs=>{ setAdvs(docs); LC.set("faltasAdv",docs); }));
 
-    unsubs.push(fbListen("colaboradores", docs=>{
-      if(docs.length===0){ SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c)); return; }
+    unsubs.push(fbListen("colaboradores", (docs,meta)=>{
+      if(docs.length===0){
+        // só semeia se o servidor confirmou que está vazio e não há cópia local (evita "ressuscitar" dados antigos)
+        if(meta && !meta.fromCache && !(LC.get("colaboradores",[])||[]).length) SEED_COLABORADORES.forEach(c=>fbSet("colaboradores",c.id,c));
+        return;
+      }
       const sorted=docs.sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
       setColaboradores(sorted); LC.set("colaboradores",sorted);
       setPronto(true);
-
-      // Migração única: move colaboradores com função Pleno / Pleno PREV. para a aba Plenos
-      if(!window.__MIG_PLENOS__){
-        window.__MIG_PLENOS__=true;
-        (async()=>{
-          try{
-            if(LC.get("migPlenos",false)) return;
-            let jaFeito=false;
-            try{ jaFeito=(await getDB().collection("config").doc("migracaoPlenos").get()).exists; }catch(e){}
-            if(jaFeito){ LC.set("migPlenos",true); return; }
-            const alvo=docs.filter(c=>/^pleno/i.test(c.funcao||"") && c.turno!=="plenos");
-            await Promise.all(alvo.map(c=>fbSet("colaboradores",c.id,{turno:"plenos"})));
-            LC.set("migPlenos",true);
-            try{ await getDB().collection("config").doc("migracaoPlenos").set({feito:true,em:new Date().toISOString(),movidos:alvo.map(c=>c.id)}); }catch(e){}
-          }catch(e){ console.warn("Migração Plenos falhou:",e); }
-        })();
-      }
     }));
 
-    unsubs.push(fbListen("tiposStatus", docs=>{
-      if(docs.length===0){ STATUS_SEED.forEach((t,i)=>fbSet("tiposStatus",t.id,{...t,ordem:i})); return; }
+    unsubs.push(fbListen("tiposStatus", (docs,meta)=>{
+      if(docs.length===0){ if(!meta || meta.fromCache || (LC.get("tiposStatus",[])||[]).length) return; STATUS_SEED.forEach((t,i)=>fbSet("tiposStatus",t.id,{...t,ordem:i})); return; }
       const sorted=docs.sort((a,b)=>(a.ordem||0)-(b.ordem||0));
       setTiposStatus(sorted); LC.set("tiposStatus",sorted);
     }));
 
-    fbGet("presencas").then(docs=>{
+    unsubs.push(fbListen("presencas", docs=>{
       const map={};
       docs.forEach(d=>{ if(d.data) Object.assign(map,d.data); });
+      Object.entries(pendingRef.current).forEach(([k,v])=>{ if(v===null) delete map[k]; else map[k]=v; });
       presencasRef.current=map; setPresencas({...map}); LC.set("presencas",map);
-    });
+    }));
 
     unsubs.push(fbListen("bancoHoras", docs=>{
       const sorted=docs.sort((a,b)=>(b.data||"").localeCompare(a.data||""));
       setBancoHoras(sorted); LC.set("bancoHoras",sorted);
     }));
 
-    fbGet("almocos").then(docs=>{
+    unsubs.push(fbListen("almocos", docs=>{
       const map={};
       docs.forEach(d=>{ if(d.data) Object.assign(map,d.data); });
       setAlmocos(map); LC.set("almocos",map);
-    });
+    }));
 
     return()=>unsubs.forEach(u=>u());
   },[]);
@@ -321,13 +328,14 @@ function ControlePresenca(){
   const flushPresencas = useCallback(()=>{
     clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
-      const snap=presencasRef.current;
+      const ch=pendingRef.current; pendingRef.current={};
+      if(!Object.keys(ch).length) return;
       setSalvando(true);
       try{
-        await fbSet("presencas","mapa",{data:snap});
-        LC.set("presencas",snap);
+        await fbPatchMapa("presencas",ch);
+        LC.set("presencas",presencasRef.current);
         showToast("Salvo ✓");
-      }catch(e){ showToast("Erro ao salvar: "+e.message,true); }
+      }catch(e){ pendingRef.current={...ch,...pendingRef.current}; showToast("Erro ao salvar: "+e.message,true); }
       finally{ setSalvando(false); }
     },1500);
   },[showToast]);
@@ -337,6 +345,7 @@ function ControlePresenca(){
     setPresencas(prev=>{
       const nm={...prev};
       if(!next||next==="vazio") delete nm[key]; else nm[key]=next;
+      pendingRef.current[key]=(!next||next==="vazio")?null:next;
       presencasRef.current=nm;
       flushPresencas();
       return nm;
@@ -357,7 +366,7 @@ function ControlePresenca(){
     const fim=new Date(hoje); fim.setFullYear(fim.getFullYear()+1);
     while(inicio.getDay()!==diaSemana) inicio.setDate(inicio.getDate()+1);
     const d=new Date(inicio);
-    while(d<=fim){ next[`${colabId}:${isoDate(d)}`]=idFolga; d.setDate(d.getDate()+7); }
+    while(d<=fim){ const k=`${colabId}:${isoDate(d)}`; if(!(k in next)) next[k]=idFolga; d.setDate(d.getDate()+7); }
     return next;
   },[tiposStatus]);
 
@@ -379,18 +388,19 @@ function ControlePresenca(){
         await fbSet("rh",colabFinal.matricula,{id:colabFinal.matricula,matricula:colabFinal.matricula,nome:colabFinal.nome,cargo,admissao,nascimento:nascimento||""});
       }
       if(colabFinal.diaFolga!==null&&colabFinal.diaFolga!==undefined){
-        let base={...presencasRef.current};
-        if(!isNovo){
-          const ant=colaboradores.find(c=>c.id===colabId);
-          if(ant?.diaFolga!==colabFinal.diaFolga){
+        const ant=colaboradores.find(c=>c.id===colabId);
+        if(isNovo||ant?.diaFolga!==colabFinal.diaFolga){
+          const antes=presencasRef.current;
+          let base={...antes};
+          if(!isNovo){
             const idF=tiposStatus.find(t=>t.id==="folga")?.id||"folga";
             Object.keys(base).forEach(k=>{ if(k.startsWith(colabId+":")&&base[k]===idF) delete base[k]; });
           }
+          const np=gerarFolgas(colabId,colabFinal.diaFolga,base);
+          presencasRef.current=np; setPresencas({...np});
+          await fbPatchMapa("presencas",diffMapa(antes,np));
+          LC.set("presencas",np);
         }
-        const np=gerarFolgas(colabId,colabFinal.diaFolga,base);
-        presencasRef.current=np; setPresencas({...np});
-        await fbSet("presencas","mapa",{data:np});
-        LC.set("presencas",np);
       }
       showToast(isNovo?"Colaborador cadastrado":"Colaborador atualizado");
     }catch(e){ showToast("Erro: "+e.message,true); }
@@ -491,10 +501,10 @@ function ControlePresenca(){
     setSalvando(true);
     try{
       await fbDel("colaboradores",id);
-      const np={...presencasRef.current};
+      const antes=presencasRef.current, np={...antes};
       Object.keys(np).forEach(k=>{ if(k.startsWith(id+":")) delete np[k]; });
       presencasRef.current=np; setPresencas({...np});
-      await fbSet("presencas","mapa",{data:np});
+      await fbPatchMapa("presencas",diffMapa(antes,np));
       LC.set("presencas",np);
       showToast("Colaborador removido");
     }catch(e){ showToast("Erro: "+e.message,true); }
@@ -514,10 +524,10 @@ function ControlePresenca(){
     setSalvando(true);
     try{
       await fbDel("tiposStatus",id);
-      const np={...presencasRef.current};
+      const antes=presencasRef.current, np={...antes};
       Object.keys(np).forEach(k=>{ if(np[k]===id) delete np[k]; });
       presencasRef.current=np; setPresencas({...np});
-      await fbSet("presencas","mapa",{data:np});
+      await fbPatchMapa("presencas",diffMapa(antes,np));
       showToast("Tipo removido");
     }catch(e){ showToast("Erro: "+e.message,true); }
     finally{ setSalvando(false); }
@@ -582,7 +592,7 @@ function ControlePresenca(){
     if(!saida&&!retorno) delete next[key]; else next[key]={saida,retorno};
     setAlmocos(next);
     setSalvando(true);
-    try{ await fbSet("almocos","mapa",{data:next}); LC.set("almocos",next); }
+    try{ await fbPatchMapa("almocos",{[key]:(!saida&&!retorno)?null:{saida,retorno}}); LC.set("almocos",next); }
     catch(e){ showToast("Erro: "+e.message,true); }
     finally{ setSalvando(false); }
   },[almocos,showToast]);
